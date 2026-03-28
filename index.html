@@ -846,11 +846,26 @@ function draw() {
   ctx.beginPath(); ctx.moveTo(0, RULER);       ctx.lineTo(canvas.width, RULER);        ctx.stroke();
   ctx.beginPath(); ctx.moveTo(0, gridBottom);  ctx.lineTo(canvas.width, gridBottom);   ctx.stroke();
 
+  // ── Quadrant tints ──
+  const quadrantTint = (x, y, w, h, state) => {
+    const tints = { open: 'rgba(204,34,34,0.04)', wall: 'rgba(255,102,0,0.07)', null: 'rgba(100,100,180,0.05)' };
+    ctx.fillStyle = tints[state];
+    ctx.fillRect(x, y, w, h);
+  };
+  quadrantTint(gx,    gy,    midX - gx,        midY - gy,         walls.V); // top-left  (V+Y)
+  quadrantTint(midX,  gy,    gridRight - midX,  midY - gy,         walls.V); // top-right (V+Z)
+  quadrantTint(gx,    midY,  midX - gx,        gridBottom - midY, walls.X); // bot-left  (X+Y)
+  quadrantTint(midX,  midY,  gridRight - midX,  gridBottom - midY, walls.X); // bot-right (X+Z)
+
   // ── Center dividers (styled per wall state) ──
   function drawSeg(x1, y1, x2, y2, state) {
     const s = segStyle[state];
-    ctx.strokeStyle = s.color; ctx.lineWidth = 2;
+    // Glow pass
+    ctx.strokeStyle = s.color; ctx.lineWidth = 6; ctx.globalAlpha = 0.18;
     ctx.setLineDash(s.dash);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    // Core line
+    ctx.lineWidth = 2; ctx.globalAlpha = 1;
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
     ctx.setLineDash([]);
   }
@@ -859,13 +874,19 @@ function draw() {
   drawSeg(gx,   midY,  midX, midY,       walls.Y); // Y: left half horizontal
   drawSeg(midX, midY,  gridRight, midY,  walls.Z); // Z: right half horizontal
 
+  // Center crosshair dot
+  ctx.beginPath();
+  ctx.arc(midX, midY, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#555'; ctx.fill();
+  ctx.strokeStyle = '#888'; ctx.lineWidth = 1; ctx.stroke();
+
   // ── Divider labels (clickable walls) ──
-  const pad = 6; const LW = 14, LH = 14;
+  const pad = 6; const LW = 20, LH = 16;
   labelHits = {
-    V: { x: midX + pad - LW/2,       y: gy + pad,              w: LW, h: LH },
-    X: { x: midX + pad - LW/2,       y: gridBottom - pad - LH, w: LW, h: LH },
-    Y: { x: gx + pad,                y: midY - pad - LH/2,     w: LW, h: LH },
-    Z: { x: gridRight - pad - LW,    y: midY - pad - LH/2,     w: LW, h: LH },
+    V: { x: midX + pad,               y: gy + pad,              w: LW, h: LH },
+    X: { x: midX + pad,               y: gridBottom - pad - LH, w: LW, h: LH },
+    Y: { x: gx + pad,                 y: midY - LH/2,           w: LW, h: LH },
+    Z: { x: gridRight - pad - LW,     y: midY - LH/2,           w: LW, h: LH },
   };
   ctx.font = 'bold 11px monospace';
   const wallColors = { open: null, wall: '#ff6600', null: '#333344' };
@@ -873,7 +894,12 @@ function draw() {
   Object.entries(labelHits).forEach(([name, box]) => {
     const state = walls[name];
     const bg = wallColors[state];
-    if (bg) { ctx.fillStyle = bg; ctx.fillRect(box.x, box.y, box.w, box.h); }
+    // Chip background
+    ctx.fillStyle = bg || '#111';
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    // Chip border in state color
+    ctx.strokeStyle = segStyle[state].color; ctx.lineWidth = 1;
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
     // outline for null state
     if (state === 'null') { ctx.strokeStyle = '#aaaacc'; ctx.lineWidth = 1; ctx.strokeRect(box.x, box.y, box.w, box.h); }
     ctx.fillStyle = textColors[state];
