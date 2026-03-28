@@ -165,6 +165,11 @@
     <option value="coords">  Coords</option>
     <option value="twinHorizontal">  Twin Horizontal</option>
     <option value="twinVertical">  Twin Vertical</option>
+    <option value="primeBoxes">  Prime Boxes</option>
+    <option value="twinBoxes">  Twin Boxes</option>
+    <option value="fibBoxes">  Fibonacci Boxes</option>
+    <option value="squareBoxes">  Square Boxes</option>
+    <option value="tensBoxes">  Tens Boxes</option>
   </select>
 
   <div id="stats">
@@ -228,7 +233,7 @@ function yLabel(r) {
 }
 
 // ── Layers ─────────────────────────────────────────────
-const layers = { dividers: true, age: false, neighbors: false, heatmap: false, population: false, primes: true, twinPrimes: false, fibonacci: false, squares: false, tensHorizontal: false, tensVertical: false, coords: false, twinHorizontal: false, twinVertical: false };
+const layers = { dividers: true, age: false, neighbors: false, heatmap: false, population: false, primes: true, twinPrimes: false, fibonacci: false, squares: false, tensHorizontal: false, tensVertical: false, coords: false, twinHorizontal: false, twinVertical: false, primeBoxes: false, twinBoxes: false, fibBoxes: false, squareBoxes: false, tensBoxes: false };
 let ages; // Uint16Array — generations each cell has been alive
 const popHistory = []; // population over time
 const POP_HISTORY_LEN = 200;
@@ -310,6 +315,22 @@ function draw() {
   const midX = gx + Math.floor(cols / 2) * CELL;
   const midY = gy + Math.floor(rows / 2) * CELL;
 
+  // ── Box helper ──
+  function drawBoxes(seq, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    seq.forEach(d => {
+      const x = midX - d * CELL, y = midY - d * CELL;
+      const w = d * CELL * 2,    h = d * CELL * 2;
+      if (x >= gridRight || x + w <= gx || y >= gridBottom || y + h <= gy) return;
+      ctx.strokeRect(
+        Math.max(x, gx), Math.max(y, gy),
+        Math.min(x + w, gridRight) - Math.max(x, gx),
+        Math.min(y + h, gridBottom) - Math.max(y, gy)
+      );
+    });
+  }
+
   // ── Full-grid line helper ──
   function drawGridLines(seq, color) {
     ctx.strokeStyle = color;
@@ -368,6 +389,9 @@ function draw() {
 
   const sqSet = [];
   for (let i = 1; i * i <= maxDist; i++) if (i * i >= 2) sqSet.push(i * i);
+
+  const tensSet = [];
+  for (let i = 10; i <= maxDist; i += 10) tensSet.push(i);
 
   // ── Rulers background ──
   ctx.fillStyle = '#111';
@@ -600,9 +624,6 @@ function draw() {
   }
 
   // ── Layer: Tens Horizontal / Vertical ──
-  const tensSet = [];
-  for (let i = 10; i <= maxDist; i += 10) tensSet.push(i);
-
   if (layers.tensHorizontal) {
     ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(170,255,0,0.55)';
     tensSet.forEach(d => {
@@ -638,6 +659,13 @@ function draw() {
       }
     }
   }
+
+  // ── Box layers ──
+  if (layers.primeBoxes)  drawBoxes(primesSet, 'rgba(153,51,204,0.5)');
+  if (layers.twinBoxes)   drawBoxes(twinSet,   'rgba(255,220,40,0.5)');
+  if (layers.fibBoxes)    drawBoxes(fibSet,    'rgba(255,153,51,0.5)');
+  if (layers.squareBoxes) drawBoxes(sqSet,     'rgba(51,204,255,0.5)');
+  if (layers.tensBoxes)   drawBoxes(tensSet,   'rgba(170,255,0,0.5)');
 
   // ── Layer: Twin Horizontal ──
   // Vertical lines (up/down) at each twin prime distance along the horizontal axis
@@ -832,7 +860,7 @@ document.getElementById('label-select').addEventListener('change', e => {
 });
 
 // ── Layer toggles ──────────────────────────────────────
-const layerNames = { dividers: 'Dividers', age: 'Age', neighbors: 'Neighbors', heatmap: 'Heatmap', population: 'Population', primes: 'Primes', twinPrimes: 'Twin Primes', fibonacci: 'Fibonacci', squares: 'Squares', tensHorizontal: 'Tens Horizontal', tensVertical: 'Tens Vertical', coords: 'Coords', twinHorizontal: 'Twin Horizontal', twinVertical: 'Twin Vertical' };
+const layerNames = { dividers: 'Dividers', age: 'Age', neighbors: 'Neighbors', heatmap: 'Heatmap', population: 'Population', primes: 'Primes', twinPrimes: 'Twin Primes', fibonacci: 'Fibonacci', squares: 'Squares', tensHorizontal: 'Tens Horizontal', tensVertical: 'Tens Vertical', coords: 'Coords', twinHorizontal: 'Twin Horizontal', twinVertical: 'Twin Vertical', primeBoxes: 'Prime Boxes', twinBoxes: 'Twin Boxes', fibBoxes: 'Fibonacci Boxes', squareBoxes: 'Square Boxes', tensBoxes: 'Tens Boxes' };
 
 function refreshLayerSelect() {
   const sel = document.getElementById('layer-select');
