@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grid</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-family: 'Segoe UI', Calibri, sans-serif;
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      background: #2d2d2d;
+      border-bottom: 1px solid #3c3c3c;
+      padding: 4px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    #cell-ref {
+      width: 60px;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #d4d4d4;
+      padding: 2px 6px;
+      font-size: 12px;
+      font-family: monospace;
+      text-align: center;
+      border-radius: 2px;
+      outline: none;
+    }
+
+    #toolbar-sep {
+      width: 1px;
+      height: 20px;
+      background: #444;
+    }
+
+    #formula-bar {
+      flex: 1;
+      background: #1e1e1e;
+      border: 1px solid #444;
+      color: #d4d4d4;
+      padding: 2px 8px;
+      font-size: 13px;
+      font-family: 'Segoe UI', sans-serif;
+      border-radius: 2px;
+      outline: none;
+    }
+
+    #formula-bar:focus { border-color: #0078d4; }
+
+    /* ── Grid wrapper ── */
+    #grid-wrapper {
+      flex: 1;
+      overflow: auto;
+      position: relative;
+    }
+
+    /* ── Table ── */
+    table {
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    /* Corner cell */
+    .corner {
+      background: #2d2d2d;
+      border-right: 1px solid #444;
+      border-bottom: 1px solid #444;
+      position: sticky;
+      top: 0;
+      left: 0;
+      z-index: 4;
+      width: 46px;
+      min-width: 46px;
+    }
+
+    /* Column headers */
+    .col-header {
+      background: #2d2d2d;
+      border-right: 1px solid #383838;
+      border-bottom: 1px solid #444;
+      text-align: center;
+      font-weight: 400;
+      color: #aaa;
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      width: 100px;
+      min-width: 60px;
+      height: 22px;
+      padding: 0 4px;
+      white-space: nowrap;
+      cursor: default;
+    }
+
+    .col-header.selected-col {
+      background: #094771;
+      color: #fff;
+    }
+
+    /* Row headers */
+    .row-header {
+      background: #2d2d2d;
+      border-right: 1px solid #444;
+      border-bottom: 1px solid #383838;
+      text-align: right;
+      padding: 0 6px;
+      color: #aaa;
+      font-weight: 400;
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      width: 46px;
+      min-width: 46px;
+      height: 22px;
+      cursor: default;
+      white-space: nowrap;
+    }
+
+    .row-header.selected-row {
+      background: #094771;
+      color: #fff;
+    }
+
+    /* Data cells */
+    td.cell {
+      border-right: 1px solid #2e2e2e;
+      border-bottom: 1px solid #2e2e2e;
+      padding: 0;
+      height: 22px;
+      max-width: 100px;
+      overflow: hidden;
+      cursor: cell;
+      position: relative;
+    }
+
+    td.cell.in-selection {
+      background: #0c3d6e33;
+    }
+
+    td.cell.active {
+      outline: 2px solid #0078d4;
+      outline-offset: -2px;
+      z-index: 1;
+    }
+
+    .cell-inner {
+      width: 100%;
+      height: 100%;
+      padding: 0 4px;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .cell-inner.align-right { justify-content: flex-end; }
+    .cell-inner.align-center { justify-content: center; }
+
+    /* The actual <input> overlay */
+    #cell-editor {
+      position: absolute;
+      border: 2px solid #0078d4;
+      background: #1e1e1e;
+      color: #d4d4d4;
+      font-size: 13px;
+      font-family: 'Segoe UI', sans-serif;
+      padding: 0 4px;
+      outline: none;
+      z-index: 10;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      display: none;
+    }
+
+    /* Scrollbar */
+    #grid-wrapper::-webkit-scrollbar { width: 10px; height: 10px; }
+    #grid-wrapper::-webkit-scrollbar-track { background: #1e1e1e; }
+    #grid-wrapper::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+    #grid-wrapper::-webkit-scrollbar-corner { background: #1e1e1e; }
+
+    /* Status bar */
+    #status-bar {
+      background: #007acc;
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 12px;
+      display: flex;
+      gap: 24px;
+      flex-shrink: 0;
+    }
+
+    #status-bar span { opacity: 0.9; }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <input id="cell-ref" readonly value="A1">
+  <div id="toolbar-sep"></div>
+  <input id="formula-bar" type="text" placeholder="Enter value or formula...">
+</div>
+
+<div id="grid-wrapper">
+  <table id="sheet">
+    <thead id="thead"></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <input id="cell-editor" type="text">
+</div>
+
+<div id="status-bar">
+  <span id="status-cell">A1</span>
+  <span id="status-sum"></span>
+  <span id="status-count"></span>
+  <span id="status-avg"></span>
+</div>
+
+<script>
+const ROWS = 50;
+const COLS = 26;
+
+// ── State ──────────────────────────────────────────────
+const data = {}; // "R,C" -> raw string
+let activeRow = 0, activeCol = 0;
+let selStart = null, selEnd = null; // {r,c}
+let isEditing = false;
+
+// ── Helpers ────────────────────────────────────────────
+function colLetter(c) {
+  let s = '';
+  let n = c + 1;
+  while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+function cellRef(r, c) { return colLetter(c) + (r + 1); }
+function key(r, c) { return r + ',' + c; }
+function getCell(r, c) { return document.getElementById('cell-' + key(r, c)); }
+
+// ── Build table ────────────────────────────────────────
+(function buildTable() {
+  const thead = document.getElementById('thead');
+  const tbody = document.getElementById('tbody');
+
+  // Header row
+  let hrow = document.createElement('tr');
+  let corner = document.createElement('th');
+  corner.className = 'corner';
+  hrow.appendChild(corner);
+  for (let c = 0; c < COLS; c++) {
+    let th = document.createElement('th');
+    th.className = 'col-header';
+    th.id = 'ch-' + c;
+    th.textContent = colLetter(c);
+    th.dataset.col = c;
+    th.addEventListener('click', e => selectCol(+e.currentTarget.dataset.col));
+    hrow.appendChild(th);
+  }
+  thead.appendChild(hrow);
+
+  // Data rows
+  for (let r = 0; r < ROWS; r++) {
+    let tr = document.createElement('tr');
+    let rh = document.createElement('td');
+    rh.className = 'row-header';
+    rh.id = 'rh-' + r;
+    rh.textContent = r + 1;
+    rh.dataset.row = r;
+    rh.addEventListener('click', e => selectRow(+e.currentTarget.dataset.row));
+    tr.appendChild(rh);
+
+    for (let c = 0; c < COLS; c++) {
+      let td = document.createElement('td');
+      td.className = 'cell';
+      td.id = 'cell-' + key(r, c);
+      td.dataset.r = r; td.dataset.c = c;
+
+      let inner = document.createElement('div');
+      inner.className = 'cell-inner';
+      inner.id = 'inner-' + key(r, c);
+      td.appendChild(inner);
+
+      td.addEventListener('mousedown', onCellMouseDown);
+      td.addEventListener('mouseover', onCellMouseOver);
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+})();
+
+// ── Evaluate (simple = formula support) ───────────────
+function evaluate(raw, r, c) {
+  if (!raw || !raw.startsWith('=')) return raw;
+  let expr = raw.slice(1).toUpperCase();
+
+  // SUM(A1:B3) / AVERAGE / COUNT
+  const rangeFn = (fn) => {
+    return expr.replace(new RegExp(fn + '\\(([A-Z]+)(\\d+):([A-Z]+)(\\d+)\\)', 'g'), (_, c1, r1, c2, r2) => {
+      let vals = [];
+      let cc1 = c1.charCodeAt(0) - 65, cr1 = +r1 - 1;
+      let cc2 = c2.charCodeAt(0) - 65, cr2 = +r2 - 1;
+      for (let rr = cr1; rr <= cr2; rr++)
+        for (let cc = cc1; cc <= cc2; cc++) {
+          let v = parseFloat(data[key(rr, cc)] || '');
+          if (!isNaN(v)) vals.push(v);
+        }
+      if (fn === 'SUM') return vals.reduce((a, b) => a + b, 0);
+      if (fn === 'AVERAGE') return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+      if (fn === 'COUNT') return vals.length;
+      return 0;
+    });
+  };
+
+  try {
+    let e2 = expr;
+    e2 = rangeFn('SUM').replace(expr, e2);
+    // Re-apply after range fns
+    e2 = expr;
+    for (let fn of ['SUM','AVERAGE','COUNT']) {
+      e2 = e2.replace(new RegExp(fn + '\\(([A-Z]+)(\\d+):([A-Z]+)(\\d+)\\)', 'g'), (_, c1, r1, c2, r2) => {
+        let vals = [];
+        let cc1 = c1.charCodeAt(0) - 65, cr1 = +r1 - 1;
+        let cc2 = c2.charCodeAt(0) - 65, cr2 = +r2 - 1;
+        for (let rr = cr1; rr <= cr2; rr++)
+          for (let cc = cc1; cc <= cc2; cc++) {
+            let v = parseFloat(data[key(rr, cc)] || '');
+            if (!isNaN(v)) vals.push(v);
+          }
+        if (fn === 'SUM') return vals.reduce((a, b) => a + b, 0);
+        if (fn === 'AVERAGE') return vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2) : 0;
+        if (fn === 'COUNT') return vals.length;
+        return 0;
+      });
+    }
+    // Cell references like A1, B2
+    e2 = e2.replace(/([A-Z]+)(\d+)/g, (_, cl, rn) => {
+      let cc = cl.charCodeAt(0) - 65, rr = +rn - 1;
+      let v = data[key(rr, cc)] || '0';
+      if (v.startsWith('=')) return evaluate(v, rr, cc) || '0';
+      return isNaN(+v) ? '"' + v + '"' : (+v);
+    });
+    let result = Function('"use strict"; return (' + e2 + ')')();
+    return result !== undefined ? result : '#ERR';
+  } catch {
+    return '#ERR';
+  }
+}
+
+function renderCell(r, c) {
+  let raw = data[key(r, c)] || '';
+  let display = evaluate(raw, r, c);
+  let inner = document.getElementById('inner-' + key(r, c));
+  if (!inner) return;
+  inner.textContent = display;
+  // Right-align numbers
+  let num = parseFloat(display);
+  inner.className = 'cell-inner' + (!isNaN(num) && display !== '' ? ' align-right' : '');
+}
+
+function renderAll() {
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      renderCell(r, c);
+}
+
+// ── Selection ──────────────────────────────────────────
+function setActive(r, c, extendSel) {
+  commitEdit();
+  activeRow = Math.max(0, Math.min(ROWS - 1, r));
+  activeCol = Math.max(0, Math.min(COLS - 1, c));
+  if (!extendSel) { selStart = { r: activeRow, c: activeCol }; selEnd = { r: activeRow, c: activeCol }; }
+  else { selEnd = { r: activeRow, c: activeCol }; }
+  renderSelection();
+  updateToolbar();
+  updateStatus();
+  scrollToActive();
+}
+
+function renderSelection() {
+  // Clear all
+  document.querySelectorAll('.cell').forEach(el => el.classList.remove('active', 'in-selection'));
+  document.querySelectorAll('.col-header').forEach(el => el.classList.remove('selected-col'));
+  document.querySelectorAll('.row-header').forEach(el => el.classList.remove('selected-row'));
+
+  let r1 = Math.min(selStart.r, selEnd.r), r2 = Math.max(selStart.r, selEnd.r);
+  let c1 = Math.min(selStart.c, selEnd.c), c2 = Math.max(selStart.c, selEnd.c);
+
+  for (let r = r1; r <= r2; r++)
+    for (let c = c1; c <= c2; c++) {
+      let td = getCell(r, c);
+      if (td) td.classList.add(r === activeRow && c === activeCol ? 'active' : 'in-selection');
+    }
+
+  // Headers
+  for (let c = c1; c <= c2; c++) {
+    let ch = document.getElementById('ch-' + c);
+    if (ch) ch.classList.add('selected-col');
+  }
+  for (let r = r1; r <= r2; r++) {
+    let rh = document.getElementById('rh-' + r);
+    if (rh) rh.classList.add('selected-row');
+  }
+  getCell(activeRow, activeCol)?.classList.add('active');
+}
+
+function selectCol(c) {
+  activeCol = c; activeRow = 0;
+  selStart = { r: 0, c }; selEnd = { r: ROWS - 1, c };
+  renderSelection(); updateToolbar(); updateStatus();
+}
+
+function selectRow(r) {
+  activeRow = r; activeCol = 0;
+  selStart = { r, c: 0 }; selEnd = { r, c: COLS - 1 };
+  renderSelection(); updateToolbar(); updateStatus();
+}
+
+function scrollToActive() {
+  getCell(activeRow, activeCol)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
+// ── Toolbar / status ───────────────────────────────────
+function updateToolbar() {
+  document.getElementById('cell-ref').value = cellRef(activeRow, activeCol);
+  let raw = data[key(activeRow, activeCol)] || '';
+  document.getElementById('formula-bar').value = raw;
+}
+
+function updateStatus() {
+  document.getElementById('status-cell').textContent = cellRef(activeRow, activeCol);
+  let r1 = Math.min(selStart.r, selEnd.r), r2 = Math.max(selStart.r, selEnd.r);
+  let c1 = Math.min(selStart.c, selEnd.c), c2 = Math.max(selStart.c, selEnd.c);
+  let vals = [];
+  for (let r = r1; r <= r2; r++)
+    for (let c = c1; c <= c2; c++) {
+      let v = parseFloat(data[key(r, c)] || '');
+      if (!isNaN(v)) vals.push(v);
+    }
+  if (vals.length > 1) {
+    let sum = vals.reduce((a, b) => a + b, 0);
+    document.getElementById('status-sum').textContent = 'Sum: ' + sum;
+    document.getElementById('status-count').textContent = 'Count: ' + vals.length;
+    document.getElementById('status-avg').textContent = 'Avg: ' + (sum / vals.length).toFixed(2);
+  } else {
+    document.getElementById('status-sum').textContent = '';
+    document.getElementById('status-count').textContent = '';
+    document.getElementById('status-avg').textContent = '';
+  }
+}
+
+// ── Editing ────────────────────────────────────────────
+const editor = document.getElementById('cell-editor');
+
+function startEdit(initialChar) {
+  if (isEditing) return;
+  isEditing = true;
+  let td = getCell(activeRow, activeCol);
+  if (!td) return;
+  let rect = td.getBoundingClientRect();
+  let wrapRect = document.getElementById('grid-wrapper').getBoundingClientRect();
+  editor.style.left = (rect.left - wrapRect.left + document.getElementById('grid-wrapper').scrollLeft) + 'px';
+  editor.style.top = (rect.top - wrapRect.top + document.getElementById('grid-wrapper').scrollTop) + 'px';
+  editor.style.width = Math.max(rect.width, 120) + 'px';
+  editor.style.height = rect.height + 'px';
+  editor.style.display = 'block';
+
+  if (initialChar !== undefined && initialChar !== null) {
+    editor.value = initialChar;
+  } else {
+    editor.value = data[key(activeRow, activeCol)] || '';
+  }
+  editor.focus();
+  if (initialChar === null) editor.select();
+}
+
+function commitEdit() {
+  if (!isEditing) return;
+  isEditing = false;
+  let val = editor.value;
+  let k = key(activeRow, activeCol);
+  if (val === '') delete data[k];
+  else data[k] = val;
+  editor.style.display = 'none';
+  renderCell(activeRow, activeCol);
+  // Re-render all cells that may have formula deps
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if ((data[key(r, c)] || '').startsWith('=')) renderCell(r, c);
+  updateToolbar();
+  updateStatus();
+}
+
+function cancelEdit() {
+  if (!isEditing) return;
+  isEditing = false;
+  editor.style.display = 'none';
+}
+
+// ── Mouse events ───────────────────────────────────────
+let mouseDown = false;
+
+function onCellMouseDown(e) {
+  if (e.button !== 0) return;
+  mouseDown = true;
+  let r = +e.currentTarget.dataset.r, c = +e.currentTarget.dataset.c;
+  if (isEditing) commitEdit();
+  if (e.shiftKey) {
+    selEnd = { r, c };
+    activeRow = r; activeCol = c;
+    renderSelection(); updateToolbar(); updateStatus();
+  } else {
+    setActive(r, c, false);
+  }
+  e.preventDefault();
+}
+
+function onCellMouseOver(e) {
+  if (!mouseDown) return;
+  let r = +e.currentTarget.dataset.r, c = +e.currentTarget.dataset.c;
+  activeRow = r; activeCol = c;
+  selEnd = { r, c };
+  renderSelection(); updateToolbar(); updateStatus();
+}
+
+document.addEventListener('mouseup', () => mouseDown = false);
+
+// Double-click to edit
+document.getElementById('sheet').addEventListener('dblclick', e => {
+  let td = e.target.closest('.cell');
+  if (!td) return;
+  setActive(+td.dataset.r, +td.dataset.c, false);
+  startEdit(null);
+});
+
+// ── Keyboard ───────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (isEditing) {
+    if (e.key === 'Escape') { cancelEdit(); renderSelection(); }
+    else if (e.key === 'Enter') { commitEdit(); setActive(activeRow + 1, activeCol, false); }
+    else if (e.key === 'Tab') { e.preventDefault(); commitEdit(); setActive(activeRow, activeCol + (e.shiftKey ? -1 : 1), false); }
+    return;
+  }
+
+  // Navigation
+  const nav = {
+    ArrowUp:    [activeRow - 1, activeCol],
+    ArrowDown:  [activeRow + 1, activeCol],
+    ArrowLeft:  [activeRow, activeCol - 1],
+    ArrowRight: [activeRow, activeCol + 1],
+    Tab:        [activeRow, activeCol + (e.shiftKey ? -1 : 1)],
+    Enter:      [activeRow + 1, activeCol],
+  };
+
+  if (e.key in nav) {
+    e.preventDefault();
+    let [nr, nc] = nav[e.key];
+    setActive(nr, nc, e.shiftKey && (e.key.startsWith('Arrow')));
+    return;
+  }
+
+  if (e.key === 'F2') { startEdit(null); return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    // Delete selection
+    let r1 = Math.min(selStart.r, selEnd.r), r2 = Math.max(selStart.r, selEnd.r);
+    let c1 = Math.min(selStart.c, selEnd.c), c2 = Math.max(selStart.c, selEnd.c);
+    for (let r = r1; r <= r2; r++)
+      for (let c = c1; c <= c2; c++) { delete data[key(r, c)]; renderCell(r, c); }
+    updateToolbar(); updateStatus();
+    return;
+  }
+
+  // Ctrl shortcuts
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'c') { copySelection(); return; }
+    if (e.key === 'v') { pasteSelection(); return; }
+    if (e.key === 'Home') { e.preventDefault(); setActive(0, 0, false); return; }
+    if (e.key === 'End') { e.preventDefault(); setActive(ROWS - 1, COLS - 1, false); return; }
+    return;
+  }
+
+  // Printable char → start editing
+  if (e.key.length === 1) { startEdit(e.key); }
+});
+
+// ── Formula bar editing ────────────────────────────────
+document.getElementById('formula-bar').addEventListener('focus', () => {
+  if (!isEditing) startEdit(null);
+});
+
+document.getElementById('formula-bar').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); commitEdit(); setActive(activeRow + 1, activeCol, false); }
+  if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); renderSelection(); }
+});
+
+editor.addEventListener('input', () => {
+  let fb = document.getElementById('formula-bar');
+  fb.value = editor.value;
+});
+
+// ── Copy / Paste ───────────────────────────────────────
+let clipboard = [];
+
+function copySelection() {
+  let r1 = Math.min(selStart.r, selEnd.r), r2 = Math.max(selStart.r, selEnd.r);
+  let c1 = Math.min(selStart.c, selEnd.c), c2 = Math.max(selStart.c, selEnd.c);
+  clipboard = [];
+  let text = '';
+  for (let r = r1; r <= r2; r++) {
+    let row = []; let trow = [];
+    for (let c = c1; c <= c2; c++) { row.push(data[key(r, c)] || ''); trow.push(data[key(r, c)] || ''); }
+    clipboard.push(row);
+    text += trow.join('\t') + '\n';
+  }
+  navigator.clipboard.writeText(text).catch(() => {});
+}
+
+function pasteSelection() {
+  navigator.clipboard.readText().then(text => {
+    let rows = text.split('\n').filter(r => r !== '');
+    rows.forEach((row, ri) => {
+      row.split('\t').forEach((val, ci) => {
+        let r = activeRow + ri, c = activeCol + ci;
+        if (r < ROWS && c < COLS) {
+          if (val === '') delete data[key(r, c)];
+          else data[key(r, c)] = val;
+          renderCell(r, c);
+        }
+      });
+    });
+    updateToolbar(); updateStatus();
+  }).catch(() => {
+    // fallback internal clipboard
+    clipboard.forEach((row, ri) => {
+      row.forEach((val, ci) => {
+        let r = activeRow + ri, c = activeCol + ci;
+        if (r < ROWS && c < COLS) {
+          if (val === '') delete data[key(r, c)];
+          else data[key(r, c)] = val;
+          renderCell(r, c);
+        }
+      });
+    });
+    updateToolbar(); updateStatus();
+  });
+}
+
+// ── Init ───────────────────────────────────────────────
+setActive(0, 0, false);
+</script>
+</body>
+</html>

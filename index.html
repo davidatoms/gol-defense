@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conway's Game of Life</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0a0a0a;
+      color: #ccc;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #111;
+      border-bottom: 1px solid #222;
+      width: 100%;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    #toolbar h1 {
+      font-size: 13px;
+      letter-spacing: 0.15em;
+      color: #555;
+      text-transform: uppercase;
+      margin-right: 4px;
+    }
+
+    button {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: #ccc;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 4px 12px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+    }
+
+    button:hover { background: #2a2a2a; border-color: #555; }
+    button.active { background: #1a3a1a; border-color: #3a7a3a; color: #6d6; }
+
+    .layer-btn { padding: 3px 8px; font-size: 11px; }
+    .layer-btn.active { background: #1a2a3a; border-color: #3a6aaa; color: #6af; }
+
+    #sep { width: 1px; height: 20px; background: #2a2a2a; }
+
+    label { font-size: 12px; color: #555; }
+
+    input[type=range] {
+      accent-color: #3a7a3a;
+      width: 80px;
+    }
+
+    select {
+      background: #1e1e1e;
+      border: 1px solid #333;
+      color: #ccc;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 3px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+    }
+
+    #stats {
+      margin-left: auto;
+      font-size: 11px;
+      color: #444;
+      display: flex;
+      gap: 16px;
+    }
+
+    #stats span { color: #666; }
+    #stats b { color: #888; }
+
+    canvas {
+      display: block;
+      cursor: crosshair;
+      flex: 1;
+    }
+
+    #coords {
+      position: fixed;
+      bottom: 6px;
+      right: 10px;
+      font-size: 11px;
+      color: #444;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>Life</h1>
+
+  <button id="btn-play">&#9654; Play</button>
+  <button id="btn-step">Step</button>
+  <button id="btn-clear">Clear</button>
+  <button id="btn-random">Pump</button>
+  <input type="range" id="pump-strength" min="1" max="100" value="30" style="width:70px;accent-color:#cc6600;">
+  <span id="pump-label" style="font-size:11px;color:#888;min-width:32px;">30%</span>
+
+  <div id="sep"></div>
+
+  <label>Speed</label>
+  <input type="range" id="speed" min="1" max="60" value="15">
+
+  <label>Zoom</label>
+  <input type="range" id="zoom" min="4" max="32" value="10">
+
+  <div id="sep"></div>
+
+  <label>Pattern</label>
+  <select id="patterns">
+    <option value="">— insert —</option>
+    <option value="glider">Glider</option>
+    <option value="lwss">LWSS</option>
+    <option value="blinker">Blinker</option>
+    <option value="pulsar">Pulsar</option>
+    <option value="gosper">Gosper Gun</option>
+    <option value="rpentomino">R-pentomino</option>
+  </select>
+
+  <div id="sep"></div>
+  <label>Labels</label>
+  <select id="label-select">
+    <option value="alpha">Alpha (A, B…)</option>
+    <option value="numeric">Numeric (1, 2…)</option>
+    <option value="zero">Zero-based (0, 1…)</option>
+    <option value="center">From centre (−n…0…+n)</option>
+    <option value="hex">Hex (0x0, 0x1…)</option>
+    <option value="binary">Binary (1, 10…)</option>
+  </select>
+
+  <div id="sep"></div>
+  <label>Layers</label>
+  <select id="layer-select">
+    <option value="">— layers —</option>
+    <option value="dividers">✓ Dividers</option>
+    <option value="age">  Age</option>
+    <option value="neighbors">  Neighbors</option>
+    <option value="heatmap">  Heatmap</option>
+    <option value="population">  Population</option>
+    <option value="primes">✓ Primes</option>
+    <option value="twinPrimes">  Twin Primes</option>
+    <option value="fibonacci">  Fibonacci</option>
+    <option value="squares">  Squares</option>
+    <option value="tens">  Every 10</option>
+    <option value="coords">  Coords</option>
+    <option value="twinLines">  Twin Lines</option>
+  </select>
+
+  <div id="stats">
+    <div>Gen <b id="gen">0</b></div>
+    <div>Cells <b id="alive">0</b></div>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+<div id="coords"></div>
+
+<script>
+// ── Excel column label (0→A, 1→B, 26→AA …) ────────────
+function colLabel(n) {
+  let s = '';
+  n += 1;
+  while (n > 0) { s = String.fromCharCode(65 + (n - 1) % 26) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+// ── Config ─────────────────────────────────────────────
+let CELL = 10;
+const RULER = 30; // px reserved for axes
+let cols, rows;
+let grid, next;
+let running = false;
+let generation = 0;
+let animId = null;
+let lastTime = 0;
+let fps = 15;
+let pendingPattern = null;
+let mouseCol = -1, mouseRow = -1;
+
+// ── Label mode ─────────────────────────────────────────
+let labelMode = 'alpha';
+
+function xLabel(c) {
+  const mid = Math.floor(cols / 2);
+  switch (labelMode) {
+    case 'alpha':   return colLabel(c);
+    case 'numeric': return String(c + 1);
+    case 'zero':    return String(c);
+    case 'center':  return String(c - mid);
+    case 'hex':     return '0x' + c.toString(16).toUpperCase();
+    case 'binary':  return c.toString(2);
+    default:        return colLabel(c);
+  }
+}
+
+function yLabel(r) {
+  const mid = Math.floor(rows / 2);
+  switch (labelMode) {
+    case 'alpha':   return String(r + 1);
+    case 'numeric': return String(r + 1);
+    case 'zero':    return String(r);
+    case 'center':  return String(r - mid);
+    case 'hex':     return '0x' + r.toString(16).toUpperCase();
+    case 'binary':  return r.toString(2);
+    default:        return String(r + 1);
+  }
+}
+
+// ── Layers ─────────────────────────────────────────────
+const layers = { dividers: true, age: false, neighbors: false, heatmap: false, population: false, primes: true, twinPrimes: false, fibonacci: false, squares: false, tens: false, coords: false, twinLines: false };
+let ages; // Uint16Array — generations each cell has been alive
+const popHistory = []; // population over time
+const POP_HISTORY_LEN = 200;
+
+// ── Canvas setup ───────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  cols = Math.floor((canvas.width  - RULER * 2) / CELL);
+  rows = Math.floor((canvas.height - RULER * 2) / CELL);
+  grid = new Uint8Array(cols * rows);
+  next = new Uint8Array(cols * rows);
+  ages = new Uint16Array(cols * rows);
+  draw();
+}
+
+window.addEventListener('resize', resize);
+
+// ── Grid helpers ───────────────────────────────────────
+const idx = (c, r) => r * cols + c;
+
+function get(c, r) {
+  if (c < 0 || c >= cols || r < 0 || r >= rows) return 0;
+  return grid[idx(c, r)];
+}
+
+function set(c, r, v) {
+  if (c < 0 || c >= cols || r < 0 || r >= rows) return;
+  grid[idx(c, r)] = v;
+}
+
+let pumpStrength = 0.3;
+
+function randomize() {
+  for (let i = 0; i < grid.length; i++)
+    if (Math.random() < pumpStrength) { grid[i] = 1; ages[i] = ages[i] || 1; }
+  updateStats(); draw();
+}
+
+function clear() {
+  grid.fill(0); ages.fill(0);
+  generation = 0; popHistory.length = 0;
+  updateStats(); draw();
+}
+
+// ── Step ───────────────────────────────────────────────
+function step() {
+  next.fill(0);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      let n =
+        get(c-1,r-1) + get(c,r-1) + get(c+1,r-1) +
+        get(c-1,r)               + get(c+1,r)   +
+        get(c-1,r+1) + get(c,r+1) + get(c+1,r+1);
+      let alive = grid[idx(c,r)];
+      next[idx(c,r)] = alive ? (n === 2 || n === 3 ? 1 : 0) : (n === 3 ? 1 : 0);
+    }
+  }
+  // update ages
+  for (let i = 0; i < grid.length; i++)
+    ages[i] = next[i] ? (grid[i] ? Math.min(ages[i] + 1, 65535) : 1) : 0;
+  [grid, next] = [next, grid];
+  generation++;
+  updateStats();
+}
+
+// ── Draw ───────────────────────────────────────────────
+function draw() {
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const gx = RULER, gy = RULER; // grid origin
+
+  const gridRight  = gx + cols * CELL;
+  const gridBottom = gy + rows * CELL;
+  const midX = gx + Math.floor(cols / 2) * CELL;
+  const midY = gy + Math.floor(rows / 2) * CELL;
+
+  // ── Shared sequence marker helper ──
+  function drawMarkers(seq, stroke, fill, tick = 5, labelBelow = false) {
+    ctx.strokeStyle = stroke; ctx.fillStyle = fill;
+    ctx.lineWidth = 1; ctx.font = '9px monospace';
+    seq.forEach(d => {
+      [-1, 1].forEach(dir => {
+        let y = midY + dir * d * CELL;
+        if (y > gy && y < gridBottom) {
+          ctx.beginPath(); ctx.moveTo(midX - tick, y); ctx.lineTo(midX + tick, y); ctx.stroke();
+          ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          ctx.fillText((dir > 0 ? '+' : '−') + d, midX + tick + 3, y);
+        }
+        let x = midX + dir * d * CELL;
+        if (x > gx && x < gridRight) {
+          ctx.beginPath(); ctx.moveTo(x, midY - tick); ctx.lineTo(x, midY + tick); ctx.stroke();
+          ctx.textAlign = 'center'; ctx.textBaseline = labelBelow ? 'bottom' : 'top';
+          ctx.fillText((dir > 0 ? '+' : '−') + d, x, midY + (labelBelow ? -tick - 2 : tick + 2));
+        }
+      });
+    });
+  }
+
+  // ── Precompute sequences ──
+  const maxDist = Math.max(cols, rows);
+  const sieve = new Uint8Array(maxDist + 1).fill(1);
+  sieve[0] = sieve[1] = 0;
+  for (let i = 2; i * i <= maxDist; i++) if (sieve[i]) for (let j = i*i; j <= maxDist; j += i) sieve[j] = 0;
+  const primesSet = [];
+  for (let i = 2; i <= maxDist; i++) if (sieve[i]) primesSet.push(i);
+
+  const twinSet = primesSet.filter(p => (p + 2 <= maxDist && sieve[p + 2]) || (p - 2 >= 2 && sieve[p - 2]));
+
+  const fibSet = [];
+  let a = 1, b = 1;
+  while (a <= maxDist) { if (a >= 2) fibSet.push(a); [a, b] = [b, a + b]; }
+
+  const sqSet = [];
+  for (let i = 1; i * i <= maxDist; i++) if (i * i >= 2) sqSet.push(i * i);
+
+  // ── Rulers background ──
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, canvas.width, RULER);              // top
+  ctx.fillRect(0, 0, RULER, canvas.height);             // left
+  ctx.fillRect(gridRight, 0, RULER, canvas.height);     // right
+  ctx.fillRect(0, gridBottom, canvas.width, RULER);     // bottom
+
+  // Corners
+  ctx.fillStyle = '#0e0e0e';
+  ctx.fillRect(0, 0, RULER, RULER);
+  ctx.fillRect(gridRight, 0, RULER, RULER);
+  ctx.fillRect(0, gridBottom, RULER, RULER);
+  ctx.fillRect(gridRight, gridBottom, RULER, RULER);
+
+  // ── Crosshair highlight bands ──
+  if (mouseCol >= 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.fillRect(gx + mouseCol * CELL, gy, CELL, rows * CELL);
+    ctx.fillRect(gx, gy + mouseRow * CELL, cols * CELL, CELL);
+    // ruler highlights — all four sides
+    ctx.fillStyle = 'rgba(77,189,116,0.25)';
+    ctx.fillRect(gx + mouseCol * CELL, 0, CELL, RULER);                  // top
+    ctx.fillRect(gx + mouseCol * CELL, gridBottom, CELL, RULER);         // bottom
+    ctx.fillRect(0, gy + mouseRow * CELL, RULER, CELL);                  // left
+    ctx.fillRect(gridRight, gy + mouseRow * CELL, RULER, CELL);          // right
+  }
+
+  // ── Grid lines ──
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 0.5;
+  for (let c = 0; c <= cols; c++) {
+    let x = gx + c * CELL;
+    ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x, canvas.height); ctx.stroke();
+  }
+  for (let r = 0; r <= rows; r++) {
+    let y = gy + r * CELL;
+    ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+  }
+
+  // ── Cells ──
+  ctx.fillStyle = '#4dbd74';
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (grid[idx(c, r)]) {
+        ctx.fillRect(gx + c * CELL + 1, gy + r * CELL + 1, CELL - 1, CELL - 1);
+      }
+    }
+  }
+
+  // ── Layer: Age ──
+  if (layers.age) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        let a = ages[idx(c, r)];
+        if (!a) continue;
+        let t = Math.min(a / 80, 1);
+        let R = Math.round(30  + t * 220);
+        let G = Math.round(200 - t * 160);
+        let B = Math.round(50  - t * 40);
+        ctx.fillStyle = `rgba(${R},${G},${B},0.55)`;
+        ctx.fillRect(gx + c * CELL + 1, gy + r * CELL + 1, CELL - 1, CELL - 1);
+      }
+    }
+  }
+
+  // ── Layer: Neighbors ──
+  if (layers.neighbors && CELL >= 12) {
+    ctx.font = `${Math.max(7, CELL - 5)}px monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        let n = get(c-1,r-1)+get(c,r-1)+get(c+1,r-1)+get(c-1,r)+get(c+1,r)+get(c-1,r+1)+get(c,r+1)+get(c+1,r+1);
+        if (n === 0) continue;
+        ctx.fillStyle = n === 2 || n === 3 ? 'rgba(100,220,100,0.8)' : 'rgba(180,180,180,0.4)';
+        ctx.fillText(n, gx + c * CELL + CELL / 2, gy + r * CELL + CELL / 2);
+      }
+    }
+  }
+
+  // ── Layer: Heatmap ──
+  if (layers.heatmap) {
+    const BLK = Math.max(4, Math.floor(Math.min(cols, rows) / 12));
+    for (let br = 0; br < Math.ceil(rows / BLK); br++) {
+      for (let bc = 0; bc < Math.ceil(cols / BLK); bc++) {
+        let alive = 0, total = 0;
+        for (let r = br*BLK; r < Math.min((br+1)*BLK, rows); r++)
+          for (let c = bc*BLK; c < Math.min((bc+1)*BLK, cols); c++) { alive += grid[idx(c,r)]; total++; }
+        let d = alive / total;
+        if (d === 0) continue;
+        let R = Math.round(d * 200), G = Math.round(30 + d * 60), B = Math.round(180 - d * 160);
+        ctx.fillStyle = `rgba(${R},${G},${B},0.28)`;
+        ctx.fillRect(gx + bc*BLK*CELL, gy + br*BLK*CELL, BLK*CELL, BLK*CELL);
+      }
+    }
+  }
+
+  // ── Layer: Population chart ──
+  if (layers.population && popHistory.length > 1) {
+    const cw = 160, ch = 60, cx2 = gridRight - cw - 6, cy2 = gridBottom - ch - 6;
+    ctx.fillStyle = 'rgba(0,0,0,0.65)';
+    ctx.fillRect(cx2, cy2, cw, ch);
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    ctx.strokeRect(cx2, cy2, cw, ch);
+    let maxP = Math.max(...popHistory, 1);
+    ctx.strokeStyle = '#6af'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    popHistory.forEach((v, i) => {
+      let px = cx2 + (i / (POP_HISTORY_LEN - 1)) * cw;
+      let py = cy2 + ch - (v / maxP) * (ch - 4) - 2;
+      i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    });
+    ctx.stroke();
+    ctx.fillStyle = '#6af'; ctx.font = '9px monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('pop  max:' + maxP, cx2 + 4, cy2 + 3);
+  }
+
+  // ── Layer: Dividers ──
+  if (layers.dividers) {
+  const interval = CELL >= 20 ? 1 : CELL >= 10 ? 5 : CELL >= 6 ? 10 : 20;
+  ctx.fillStyle = '#555';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  // Top ruler (columns)
+  ctx.textAlign = 'center';
+  for (let c = 0; c < cols; c++) {
+    if (c % interval !== 0) continue;
+    let x = gx + c * CELL + CELL / 2;
+    let hi = c === mouseCol;
+    ctx.strokeStyle = hi ? '#4dbd74' : '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, RULER - 5); ctx.lineTo(x, RULER); ctx.stroke();
+    ctx.fillStyle = hi ? '#4dbd74' : '#555';
+    ctx.fillText(xLabel(c), x, RULER / 2);
+  }
+
+  // Bottom ruler (columns)
+  for (let c = 0; c < cols; c++) {
+    if (c % interval !== 0) continue;
+    let x = gx + c * CELL + CELL / 2;
+    let hi = c === mouseCol;
+    ctx.strokeStyle = hi ? '#4dbd74' : '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, gridBottom); ctx.lineTo(x, gridBottom + 5); ctx.stroke();
+    ctx.fillStyle = hi ? '#4dbd74' : '#555';
+    ctx.fillText(xLabel(c), x, gridBottom + RULER / 2);
+  }
+
+  // Left ruler (rows)
+  ctx.textAlign = 'right';
+  for (let r = 0; r < rows; r++) {
+    if (r % interval !== 0) continue;
+    let y = gy + r * CELL + CELL / 2;
+    let hi = r === mouseRow;
+    ctx.strokeStyle = hi ? '#4dbd74' : '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(RULER - 5, y); ctx.lineTo(RULER, y); ctx.stroke();
+    ctx.fillStyle = hi ? '#4dbd74' : '#555';
+    ctx.fillText(yLabel(r), RULER - 7, y);
+  }
+
+  // Right ruler (rows)
+  ctx.textAlign = 'left';
+  for (let r = 0; r < rows; r++) {
+    if (r % interval !== 0) continue;
+    let y = gy + r * CELL + CELL / 2;
+    let hi = r === mouseRow;
+    ctx.strokeStyle = hi ? '#4dbd74' : '#333';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(gridRight, y); ctx.lineTo(gridRight + 5, y); ctx.stroke();
+    ctx.fillStyle = hi ? '#4dbd74' : '#555';
+    ctx.fillText(yLabel(r), gridRight + 7, y);
+  }
+
+  // Ruler border lines
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(RULER, 0);       ctx.lineTo(RULER, canvas.height);       ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(gridRight, 0);   ctx.lineTo(gridRight, canvas.height);   ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, RULER);       ctx.lineTo(canvas.width, RULER);        ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, gridBottom);  ctx.lineTo(canvas.width, gridBottom);   ctx.stroke();
+
+  // ── Center dividers ──
+  ctx.strokeStyle = '#cc2222';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(midX, gy); ctx.lineTo(midX, gridBottom); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(gx, midY); ctx.lineTo(gridRight, midY); ctx.stroke();
+
+  // ── Divider labels ──
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = '#cc2222';
+  const pad = 6;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('V', midX + pad, gy + pad);
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('X', midX + pad, gridBottom - pad);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('Y', gx + pad, midY - pad);
+  ctx.textAlign = 'right';
+  ctx.fillText('Z', gridRight - pad, midY - pad);
+
+  ctx.globalAlpha = 1;
+  } // end layers.dividers
+
+  // ── Layer: Primes (purple) ──
+  if (layers.primes) drawMarkers(primesSet, '#9933cc', '#bb66ff', 5);
+
+  // ── Layer: Twin Primes (yellow) ──
+  if (layers.twinPrimes) drawMarkers(twinSet, '#bbaa00', '#ffee44', 7, true);
+
+  // ── Layer: Fibonacci (orange) ──
+  if (layers.fibonacci) drawMarkers(fibSet, '#cc6600', '#ff9933', 6);
+
+  // ── Layer: Perfect Squares (cyan) ──
+  if (layers.squares) drawMarkers(sqSet, '#007799', '#33ccff', 4, true);
+
+  // ── Layer: Every 10 (lime) ──
+  if (layers.tens) {
+    const tensSet = [];
+    for (let i = 10; i <= maxDist; i += 10) tensSet.push(i);
+    drawMarkers(tensSet, '#448800', '#aaff00', 8);
+  }
+
+  // ── Layer: Coords ──
+  if (layers.coords && CELL >= 14) {
+    ctx.font = `${Math.max(7, Math.floor(CELL * 0.4))}px monospace`;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        ctx.fillStyle = grid[idx(c, r)] ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.18)';
+        ctx.fillText(xLabel(c) + yLabel(r), gx + c * CELL + 2, gy + r * CELL + 2);
+      }
+    }
+  }
+
+  // ── Layer: Twin Lines ──
+  if (layers.twinLines && twinSet.length > 1) {
+    ctx.lineWidth = 1;
+    // For each twin prime d, connect its horizontal mark to its vertical mark
+    // in all four quadrant directions — creates X-shaped diagonals per twin prime
+    twinSet.forEach(d => {
+      const hx = midX + d * CELL, hn = midX - d * CELL;
+      const vy = midY + d * CELL, vn = midY - d * CELL;
+      ctx.strokeStyle = 'rgba(255,220,40,0.25)';
+      // All four quadrant diagonals from axis to axis
+      [[hx, midY, midX, vn], [hx, midY, midX, vy],
+       [hn, midY, midX, vn], [hn, midY, midX, vy]].forEach(([x1,y1,x2,y2]) => {
+        if (x1 < gx || x1 > gridRight || x2 < gx || x2 > gridRight) return;
+        if (y1 < gy || y1 > gridBottom || y2 < gy || y2 > gridBottom) return;
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      });
+    });
+
+    // Connect consecutive twin primes on the horizontal axis with lines
+    // that dive into the grid — alternating above/below midY
+    ctx.strokeStyle = 'rgba(255,220,40,0.5)';
+    for (let i = 0; i < twinSet.length - 1; i++) {
+      const d1 = twinSet[i], d2 = twinSet[i + 1];
+      // positive side
+      const x1 = midX + d1 * CELL, x2 = midX + d2 * CELL;
+      const y1 = midY, y2 = midY - (d2 - d1) * CELL;
+      if (x1 <= gridRight && x2 <= gridRight && y2 >= gy) {
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      }
+      // negative side
+      const nx1 = midX - d1 * CELL, nx2 = midX - d2 * CELL;
+      const ny2 = midY + (d2 - d1) * CELL;
+      if (nx1 >= gx && nx2 >= gx && ny2 <= gridBottom) {
+        ctx.beginPath(); ctx.moveTo(nx1, y1); ctx.lineTo(nx2, ny2); ctx.stroke();
+      }
+    }
+    // Same for vertical axis
+    for (let i = 0; i < twinSet.length - 1; i++) {
+      const d1 = twinSet[i], d2 = twinSet[i + 1];
+      const y1p = midY + d1 * CELL, y2p = midY + d2 * CELL;
+      const x2p = midX + (d2 - d1) * CELL;
+      if (y1p <= gridBottom && y2p <= gridBottom && x2p <= gridRight) {
+        ctx.beginPath(); ctx.moveTo(midX, y1p); ctx.lineTo(x2p, y2p); ctx.stroke();
+      }
+      const y1n = midY - d1 * CELL, y2n = midY - d2 * CELL;
+      const x2n = midX - (d2 - d1) * CELL;
+      if (y1n >= gy && y2n >= gy && x2n >= gx) {
+        ctx.beginPath(); ctx.moveTo(midX, y1n); ctx.lineTo(x2n, y2n); ctx.stroke();
+      }
+    }
+  }
+
+}
+
+// ── Loop ───────────────────────────────────────────────
+function loop(ts) {
+  if (!running) return;
+  animId = requestAnimationFrame(loop);
+  let interval = 1000 / fps;
+  if (ts - lastTime < interval) return;
+  lastTime = ts;
+  step();
+  draw();
+}
+
+function play() {
+  running = true;
+  document.getElementById('btn-play').textContent = '⏸ Pause';
+  document.getElementById('btn-play').classList.add('active');
+  animId = requestAnimationFrame(loop);
+}
+
+function pause() {
+  running = false;
+  document.getElementById('btn-play').textContent = '▶ Play';
+  document.getElementById('btn-play').classList.remove('active');
+  if (animId) cancelAnimationFrame(animId);
+}
+
+function togglePlay() { running ? pause() : play(); }
+
+// ── Stats ──────────────────────────────────────────────
+function updateStats() {
+  document.getElementById('gen').textContent = generation;
+  let count = 0;
+  for (let i = 0; i < grid.length; i++) count += grid[i];
+  document.getElementById('alive').textContent = count;
+  popHistory.push(count);
+  if (popHistory.length > POP_HISTORY_LEN) popHistory.shift();
+}
+
+// ── Mouse drawing ──────────────────────────────────────
+let painting = false;
+let paintValue = 1;
+
+canvas.addEventListener('mousedown', e => {
+  if (pendingPattern) {
+    insertPattern(pendingPattern, ...mouseCell(e));
+    pendingPattern = null;
+    document.getElementById('patterns').value = '';
+    draw();
+    return;
+  }
+  painting = true;
+  let [c, r] = mouseCell(e);
+  paintValue = get(c, r) ? 0 : 1;
+  set(c, r, paintValue);
+  updateStats();
+  draw();
+});
+
+canvas.addEventListener('mousemove', e => {
+  let [c, r] = mouseCell(e);
+  mouseCol = c; mouseRow = r;
+  document.getElementById('coords').textContent =
+    (c >= 0 && r >= 0 && c < cols && r < rows) ? `${colLabel(c)}${r + 1}` : '';
+  if (painting) { set(c, r, paintValue); updateStats(); }
+  draw();
+});
+
+canvas.addEventListener('mouseup', () => painting = false);
+canvas.addEventListener('mouseleave', () => {
+  painting = false;
+  mouseCol = -1; mouseRow = -1;
+  document.getElementById('coords').textContent = '';
+  draw();
+});
+
+function mouseCell(e) {
+  let rect = canvas.getBoundingClientRect();
+  return [
+    Math.floor((e.clientX - rect.left  - RULER) / CELL),
+    Math.floor((e.clientY - rect.top - RULER) / CELL)
+  ];
+}
+
+// ── Patterns ───────────────────────────────────────────
+const PATTERNS = {
+  glider:    [[0,1],[1,2],[2,0],[2,1],[2,2]],
+  blinker:   [[0,1],[1,1],[2,1]],
+  lwss:      [[1,0],[4,0],[0,1],[0,2],[4,2],[0,3],[1,3],[2,3],[3,3]],
+  rpentomino:[[1,0],[2,0],[0,1],[1,1],[1,2]],
+  pulsar: (() => {
+    let cells = [];
+    const cols = [[2,3,4],[8,9,10]];
+    const rows2 = [[0,5,7,12],[0,5,7,12]];
+    // pulsar is symmetric, build manually
+    const p = [
+      [2,0],[3,0],[4,0],[8,0],[9,0],[10,0],
+      [0,2],[5,2],[7,2],[12,2],[0,3],[5,3],[7,3],[12,3],[0,4],[5,4],[7,4],[12,4],
+      [2,5],[3,5],[4,5],[8,5],[9,5],[10,5],
+      [2,7],[3,7],[4,7],[8,7],[9,7],[10,7],
+      [0,8],[5,8],[7,8],[12,8],[0,9],[5,9],[7,9],[12,9],[0,10],[5,10],[7,10],[12,10],
+      [2,12],[3,12],[4,12],[8,12],[9,12],[10,12]
+    ];
+    return p;
+  })(),
+  gosper: [
+    [0,4],[0,5],[1,4],[1,5],
+    [10,4],[10,5],[10,6],[11,3],[11,7],[12,2],[12,8],[13,2],[13,8],
+    [14,5],[15,3],[15,7],[16,4],[16,5],[16,6],[17,5],
+    [20,2],[20,3],[20,4],[21,2],[21,3],[21,4],[22,1],[22,5],[24,0],[24,1],[24,5],[24,6],
+    [34,2],[34,3],[35,2],[35,3]
+  ]
+};
+
+function insertPattern(name, atC, atR) {
+  let cells = PATTERNS[name];
+  if (!cells) return;
+  cells.forEach(([dc, dr]) => set(atC + dc, atR + dr, 1));
+  updateStats();
+}
+
+document.getElementById('patterns').addEventListener('change', e => {
+  pendingPattern = e.target.value || null;
+  canvas.style.cursor = pendingPattern ? 'copy' : 'crosshair';
+});
+
+// ── Controls ───────────────────────────────────────────
+document.getElementById('btn-play').addEventListener('click', togglePlay);
+
+document.getElementById('btn-step').addEventListener('click', () => {
+  pause();
+  step();
+  draw();
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => { pause(); clear(); });
+document.getElementById('btn-random').addEventListener('click', () => randomize());
+
+document.getElementById('pump-strength').addEventListener('input', e => {
+  pumpStrength = +e.target.value / 100;
+  document.getElementById('pump-label').textContent = e.target.value + '%';
+});
+
+document.getElementById('speed').addEventListener('input', e => {
+  fps = +e.target.value;
+});
+
+document.getElementById('zoom').addEventListener('input', e => {
+  CELL = +e.target.value;
+  resize();
+});
+
+// ── Keyboard ───────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  if (e.key === 'ArrowRight' || e.key === '.') { pause(); step(); draw(); }
+  if (e.key === 'c') { pause(); clear(); }
+  if (e.key === 'r') { pause(); randomize(); }
+});
+
+// ── Label mode toggle ──────────────────────────────────
+document.getElementById('label-select').addEventListener('change', e => {
+  labelMode = e.target.value;
+  draw();
+});
+
+// ── Layer toggles ──────────────────────────────────────
+const layerNames = { dividers: 'Dividers', age: 'Age', neighbors: 'Neighbors', heatmap: 'Heatmap', population: 'Population', primes: 'Primes', twinPrimes: 'Twin Primes', fibonacci: 'Fibonacci', squares: 'Squares', tens: 'Every 10', coords: 'Coords', twinLines: 'Twin Lines' };
+
+function refreshLayerSelect() {
+  const sel = document.getElementById('layer-select');
+  [...sel.options].forEach(opt => {
+    if (!opt.value) return;
+    opt.text = (layers[opt.value] ? '✓ ' : '  ') + layerNames[opt.value];
+  });
+}
+
+document.getElementById('layer-select').addEventListener('change', e => {
+  const key = e.target.value;
+  if (!key) return;
+  layers[key] = !layers[key];
+  refreshLayerSelect();
+  e.target.value = '';
+  draw();
+});
+
+// ── Init ───────────────────────────────────────────────
+resize();
+randomize();
+</script>
+</body>
+</html>
