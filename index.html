@@ -676,6 +676,9 @@ function draw() {
     ctx.fillText('pop  max:' + maxP, cx2 + 4, cy2 + 3);
   }
 
+  // ── Shared segment style (used by dividers and drawn boxes) ──
+  const segStyle = { open: { color: '#cc2222', dash: [] }, wall: { color: '#ff6600', dash: [] }, null: { color: '#aaaacc', dash: [4, 3] } };
+
   // ── Layer: Dividers ──
   if (layers.dividers) {
   const interval = CELL >= 20 ? 1 : CELL >= 10 ? 5 : CELL >= 6 ? 10 : 20;
@@ -744,7 +747,6 @@ function draw() {
   ctx.beginPath(); ctx.moveTo(0, gridBottom);  ctx.lineTo(canvas.width, gridBottom);   ctx.stroke();
 
   // ── Center dividers (styled per wall state) ──
-  const segStyle = { open: { color: '#cc2222', dash: [] }, wall: { color: '#ff6600', dash: [] }, null: { color: '#aaaacc', dash: [4, 3] } };
   function drawSeg(x1, y1, x2, y2, state) {
     const s = segStyle[state];
     ctx.strokeStyle = s.color; ctx.lineWidth = 2;
