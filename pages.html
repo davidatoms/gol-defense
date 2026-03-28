@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conway's Game of Life — Field Notes</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0a0a0a;
+      --surface:  #111;
+      --border:   #1e1e1e;
+      --muted:    #333;
+      --dim:      #555;
+      --mid:      #888;
+      --text:     #ccc;
+      --accent:   #cc2222;
+      --orange:   #ff6600;
+      --purple:   #9933cc;
+      --yellow:   #ffee44;
+      --cyan:     #33cccc;
+      --green:    #44bb44;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: monospace;
+      line-height: 1.7;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 60px 0 40px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 60px;
+    }
+
+    header h1 {
+      font-size: 22px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text);
+      margin-bottom: 10px;
+    }
+
+    header p {
+      color: var(--dim);
+      font-size: 13px;
+      max-width: 560px;
+    }
+
+    header .tag {
+      display: inline-block;
+      margin-top: 16px;
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 3px 8px;
+      border-radius: 2px;
+      margin-right: 6px;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: sticky;
+      top: 0;
+      background: rgba(10,10,10,0.95);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 0;
+      margin: 0 -24px 48px;
+      padding-left: 24px;
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      z-index: 10;
+      font-size: 11px;
+    }
+
+    nav a {
+      color: var(--dim);
+      text-decoration: none;
+      letter-spacing: 0.08em;
+      transition: color 0.15s;
+    }
+
+    nav a:hover { color: var(--text); }
+
+    /* ── Sections ── */
+    section {
+      margin-bottom: 72px;
+    }
+
+    .section-label {
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 8px;
+    }
+
+    section h2 {
+      font-size: 18px;
+      color: var(--text);
+      margin-bottom: 16px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    section h2 .accent { color: var(--accent); }
+    section h2 .orange { color: var(--orange); }
+    section h2 .purple { color: var(--purple); }
+    section h2 .yellow { color: var(--yellow); }
+    section h2 .cyan   { color: var(--cyan);   }
+    section h2 .green  { color: var(--green);  }
+
+    section p {
+      color: var(--mid);
+      font-size: 13px;
+      margin-bottom: 14px;
+      max-width: 640px;
+    }
+
+    /* ── GIF placeholder ── */
+    .media {
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: var(--surface);
+      border: 1px dashed var(--muted);
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin: 20px 0;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .media img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 4px;
+      display: none;
+    }
+
+    .media img.loaded { display: block; }
+
+    .media .placeholder-text {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .media .placeholder-icon {
+      font-size: 28px;
+      opacity: 0.3;
+    }
+
+    .media.has-image .placeholder-text { display: none; }
+
+    .media-caption {
+      font-size: 11px;
+      color: var(--dim);
+      margin-top: -12px;
+      margin-bottom: 20px;
+      font-style: italic;
+    }
+
+    /* ── Two-column layout ── */
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 20px 0;
+    }
+
+    .two-col .media { aspect-ratio: 4 / 3; }
+
+    /* ── Detail chips ── */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 16px 0;
+    }
+
+    .chip {
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      padding: 3px 10px;
+      border-radius: 2px;
+      border: 1px solid var(--muted);
+      color: var(--dim);
+    }
+
+    .chip.red    { border-color: var(--accent); color: var(--accent); }
+    .chip.orange { border-color: var(--orange); color: var(--orange); }
+    .chip.purple { border-color: var(--purple); color: var(--purple); }
+    .chip.yellow { border-color: var(--yellow); color: var(--yellow); }
+    .chip.cyan   { border-color: var(--cyan);   color: var(--cyan);   }
+    .chip.green  { border-color: var(--green);  color: var(--green);  }
+
+    /* ── Notes block ── */
+    .note {
+      background: var(--surface);
+      border-left: 3px solid var(--muted);
+      padding: 14px 18px;
+      font-size: 12px;
+      color: var(--dim);
+      border-radius: 0 3px 3px 0;
+      margin: 16px 0;
+    }
+
+    .note.red    { border-left-color: var(--accent); }
+    .note.orange { border-left-color: var(--orange); }
+    .note.purple { border-left-color: var(--purple); }
+
+    /* ── State table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      margin: 16px 0;
+    }
+
+    th {
+      text-align: left;
+      color: var(--dim);
+      font-weight: normal;
+      letter-spacing: 0.1em;
+      font-size: 10px;
+      text-transform: uppercase;
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      color: var(--mid);
+      vertical-align: top;
+    }
+
+    td:first-child { color: var(--text); }
+
+    tr:last-child td { border-bottom: none; }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      font-size: 11px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    footer a { color: var(--dim); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<header>
+  <p class="section-label">Field Notes</p>
+  <h1>Conway's Game of Life</h1>
+  <p>A living grid for spatial reasoning, sequence geometry, and physical boundary simulation. Each layer adds a new lens onto the same cellular automaton.</p>
+  <span class="tag">draw-box</span>
+  <span class="tag" style="border-color:#555;color:#555;">gol-mf</span>
+</header>
+
+<nav>
+  <a href="#life">Life</a>
+  <a href="#grid">Grid</a>
+  <a href="#dividers">Dividers</a>
+  <a href="#sequences">Sequences</a>
+  <a href="#layers">Layers</a>
+  <a href="#boxes">Sequence Boxes</a>
+  <a href="#draw">Draw Box</a>
+  <a href="#hardness">Hardness</a>
+</nav>
+
+<!-- ── 1. Conway's Game of Life ── -->
+<section id="life">
+  <p class="section-label">01 — Foundation</p>
+  <h2>Conway's <span class="accent">Game of Life</span></h2>
+
+  <p>The simulation follows four rules applied simultaneously to every cell each generation. A cell is either alive (1) or dead (0). What emerges from these simple rules is the foundation everything else is built on.</p>
+
+  <div class="media">
+    <img src="" alt="Conway's Game of Life running">
+    <div class="placeholder-text">
+      <span class="placeholder-icon">▶</span>
+      <span>gif — simulation running</span>
+    </div>
+  </div>
+  <p class="media-caption">The base simulation — cells living, dying, and being born each generation.</p>
+
+  <table>
+    <tr><th>Rule</th><th>Condition</th><th>Result</th></tr>
+    <tr><td>Underpopulation</td><td>Live cell with fewer than 2 live neighbors</td><td>Dies</td></tr>
+    <tr><td>Survival</td><td>Live cell with 2 or 3 live neighbors</td><td>Survives</td></tr>
+    <tr><td>Overpopulation</td><td>Live cell with more than 3 live neighbors</td><td>Dies</td></tr>
+    <tr><td>Reproduction</td><td>Dead cell with exactly 3 live neighbors</td><td>Born</td></tr>
+  </table>
+
+  <div class="chips">
+    <span class="chip">Play / Pause</span>
+    <span class="chip">Step</span>
+    <span class="chip">Clear</span>
+    <span class="chip orange">Pump</span>
+    <span class="chip">Speed slider</span>
+    <span class="chip">Zoom slider</span>
+  </div>
+</section>
+
+<!-- ── 2. Coordinate Grid ── -->
+<section id="grid">
+  <p class="section-label">02 — Navigation</p>
+  <h2>Excel-Style <span class="accent">Coordinate Grid</span></h2>
+
+  <p>Rulers run along all four edges of the canvas — columns across the top and bottom, rows down the left and right. The label mode can be switched at any time without affecting the simulation.</p>
+
+  <div class="two-col">
+    <div>
+      <div class="media">
+        <img src="" alt="Alpha label mode">
+        <div class="placeholder-text">
+          <span class="placeholder-icon">🔤</span>
+          <span>gif — alpha labels</span>
+        </div>
+      </div>
+      <p class="media-caption">Alpha mode (A, B, C…)</p>
+    </div>
+    <div>
+      <div class="media">
+        <img src="" alt="From-centre label mode">
+        <div class="placeholder-text">
+          <span class="placeholder-icon">±</span>
+          <span>gif — from-centre labels</span>
+        </div>
+      </div>
+      <p class="media-caption">From-centre mode (−n … 0 … +n)</p>
+    </div>
+  </div>
+
+  <table>
+    <tr><th>Mode</th><th>Example</th></tr>
+    <tr><td>Alpha</td><td>A, B, C … Z, AA, AB …</td></tr>
+    <tr><td>Numeric</td><td>1, 2, 3 …</td></tr>
+    <tr><td>Zero-based</td><td>0, 1, 2 …</td></tr>
+    <tr><td>From centre</td><td>−n … −1, 0, +1 … +n</td></tr>
+    <tr><td>Hex</td><td>0x0, 0x1, 0xa …</td></tr>
+    <tr><td>Binary</td><td>1, 10, 11, 100 …</td></tr>
+  </table>
+</section>
+
+<!-- ── 3. Dividers ── -->
+<section id="dividers">
+  <p class="section-label">03 — Structure</p>
+  <h2>V / X / Y / Z <span class="accent">Dividers</span></h2>
+
+  <p>Two lines cross the center of the grid — one vertical, one horizontal — splitting the canvas into four quadrants. Each half-segment is labeled independently: V (top), X (bottom), Y (left), Z (right).</p>
+
+  <div class="media">
+    <img src="" alt="Dividers with hardness states">
+    <div class="placeholder-text">
+      <span class="placeholder-icon">┼</span>
+      <span>gif — clicking dividers to cycle states</span>
+    </div>
+  </div>
+  <p class="media-caption">Clicking a label chip cycles that segment through its three states.</p>
+
+  <table>
+    <tr><th>State</th><th>Color</th><th>Effect on cells</th></tr>
+    <tr><td>Open</td><td style="color:var(--accent)">Red</td><td>No enforcement — cells evolve freely across the line</td></tr>
+    <tr><td>Wall</td><td style="color:var(--orange)">Orange</td><td>Cells on the line are locked alive (1)</td></tr>
+    <tr><td>Null</td><td style="color:#aaaacc">Blue-grey dashed</td><td>Cells on the line are locked dead (0)</td></tr>
+  </table>
+
+  <div class="note red">The wall state persists through every generation step, clear, and randomize — the divider re-enforces itself after each operation.</div>
+</section>
+
+<!-- ── 4. Sequence Markers ── -->
+<section id="sequences">
+  <p class="section-label">04 — Mathematics</p>
+  <h2>Mathematical <span class="purple">Sequence Markers</span></h2>
+
+  <p>Each sequence is computed from the center of the grid outward. Markers appear on the divider lines at the corresponding cell distance. Lines and boxes extend from those positions across the full grid.</p>
+
+  <div class="media">
+    <img src="" alt="Sequence markers on dividers">
+    <div class="placeholder-text">
+      <span class="placeholder-icon">π</span>
+      <span>gif — sequence layers toggled on/off</span>
+    </div>
+  </div>
+  <p class="media-caption">Each sequence draws its own color of markers and grid lines.</p>
+
+  <div class="chips">
+    <span class="chip purple">Primes</span>
+    <span class="chip yellow">Twin Primes</span>
+    <span class="chip orange">Fibonacci</span>
+    <span class="chip cyan">Perfect Squares</span>
+    <span class="chip green">Every 10</span>
+  </div>
+
+  <div class="note purple">Primes are computed via a Sieve of Eratosthenes up to the larger of cols or rows each draw call. All sequences radiate symmetrically outward from the grid center.</div>
+</section>
+
+<!-- ── 5. Observation Layers ── -->
+<section id="layers">
+  <p class="section-label">05 — Observation</p>
+  <h2>Observation <span class="green">Layers</span></h2>
+
+  <p>The layers dropdown adds visual overlays on top of the simulation without changing its behavior. Multiple layers can be active at once.</p>
+
+  <div class="two-col">
+    <div>
+      <div class="media">
+        <img src="" alt="Age layer">
+        <div class="placeholder-text">
+          <span class="placeholder-icon">⏱</span>
+          <span>gif — age layer</span>
+        </div>
+      </div>
+      <p class="media-caption">Age — how long each cell has been alive</p>
+    </div>
+    <div>
+      <div class="media">
+        <img src="" alt="Heatmap layer">
+        <div class="placeholder-text">
+          <span class="placeholder-icon">🌡</span>
+          <span>gif — heatmap layer</span>
+        </div>
+      </div>
+      <p class="media-caption">Heatmap — activity density over time</p>
+    </div>
+  </div>
+
+  <table>
+    <tr><th>Layer</th><th>What it shows</th></tr>
+    <tr><td>Age</td><td>Cells colored by consecutive generations alive</td></tr>
+    <tr><td>Neighbors</td><td>Live neighbor count overlaid on each cell</td></tr>
+    <tr><td>Heatmap</td><td>Cumulative activity — cells that have been alive often appear brighter</td></tr>
+    <tr><td>Population</td><td>Live cell count over time as a scrolling chart</td></tr>
+    <tr><td>Coords</td><td>Cell coordinates drawn inside each cell at high zoom</td></tr>
+  </table>
+</section>
+
+<!-- ── 6. Sequence Boxes ── -->
+<section id="boxes">
+  <p class="section-label">06 — Geometry</p>
+  <h2>Sequence <span class="cyan">Boxes</span></h2>
+
+  <p>Each sequence also generates concentric square boxes centered on the grid, one box per sequence value. The boxes follow the same color coding as the markers and lines.</p>
+
+  <div class="media">
+    <img src="" alt="Sequence boxes on grid">
+    <div class="placeholder-text">
+      <span class="placeholder-icon">⬜</span>
+      <span>gif — sequence boxes toggled on</span>
+    </div>
+  </div>
+  <p class="media-caption">Concentric prime boxes, twin-prime boxes, Fibonacci boxes, and square boxes.</p>
+
+  <div class="chips">
+    <span class="chip purple">Prime Boxes</span>
+    <span class="chip yellow">Twin Boxes</span>
+    <span class="chip orange">Fibonacci Boxes</span>
+    <span class="chip cyan">Square Boxes</span>
+    <span class="chip green">Tens Boxes</span>
+  </div>
+</section>
+
+<!-- ── 7. Draw Box ── -->
+<section id="draw">
+  <p class="section-label">07 — Interaction</p>
+  <h2>Draw <span class="orange">Box</span> Tool</h2>
+
+  <p>The Box button activates draw mode. Click and drag on the canvas to place a persistent rectangular boundary. Each box is labeled automatically with its date, center-relative coordinates, and a sequential letter.</p>
+
+  <div class="media">
+    <img src="" alt="Drawing a box on the canvas">
+    <div class="placeholder-text">
+      <span class="placeholder-icon">⬛</span>
+      <span>gif — drawing a box</span>
+    </div>
+  </div>
+  <p class="media-caption">Drawing a box — label appears immediately with coordinates and date.</p>
+
+  <div class="note orange">Labels follow Conway's naming convention: <code>MM-DD_(col,row)_A</code> where col/row are the top-left corner offset from the grid center.</div>
+
+  <p>Multiple boxes can be drawn and coexist on the grid simultaneously. Each is stored independently and persists through game steps.</p>
+</section>
+
+<!-- ── 8. Hardness ── -->
+<section id="hardness">
+  <p class="section-label">08 — Boundary Control</p>
+  <h2>Per-Side <span class="accent">Hardness</span></h2>
+
+  <p>Each side of a drawn box has its own independent hardness state — the same three states as the V/X/Y/Z dividers. Click a side chip on the canvas or a button in the panel below the toolbar to cycle it.</p>
+
+  <div class="media">
+    <img src="" alt="Cycling side states on a drawn box">
+    <div class="placeholder-text">
+      <span class="placeholder-icon">🔲</span>
+      <span>gif — cycling each side state</span>
+    </div>
+  </div>
+  <p class="media-caption">Top, right, bottom, and left sides each cycle independently.</p>
+
+  <div class="two-col">
+    <div>
+      <div class="media">
+        <img src="" alt="Box panel UI">
+        <div class="placeholder-text">
+          <span class="placeholder-icon">🖥</span>
+          <span>gif — box panel buttons</span>
+        </div>
+      </div>
+      <p class="media-caption">Panel buttons below toolbar</p>
+    </div>
+    <div>
+      <div class="media">
+        <img src="" alt="Side chips on canvas">
+        <div class="placeholder-text">
+          <span class="placeholder-icon">◼</span>
+          <span>gif — side chips on canvas</span>
+        </div>
+      </div>
+      <p class="media-caption">Side chips at each midpoint on canvas</p>
+    </div>
+  </div>
+
+  <table>
+    <tr><th>State</th><th>Color</th><th>Effect</th></tr>
+    <tr><td>Open</td><td style="color:var(--accent)">Red</td><td>No enforcement — cells pass through freely</td></tr>
+    <tr><td>Wall</td><td style="color:var(--orange)">Orange</td><td>Side cells locked alive — hard barrier</td></tr>
+    <tr><td>Null</td><td style="color:#aaaacc">Blue-grey dashed</td><td>Side cells locked dead — void boundary</td></tr>
+  </table>
+
+  <div class="note">The label chip in the top-left corner of each box cycles all four sides to the same state at once as a shortcut. The panel entry border uses a gradient of all four side colors so state is readable at a glance.</div>
+</section>
+
+<footer>
+  <span>Conway's Game of Life — Field Notes</span>
+  <a href="https://github.com/davidatoms/gol-mf" target="_blank">davidatoms/gol-mf</a>
+</footer>
+
+</body>
+</html>
