@@ -203,6 +203,27 @@ let fps = 15;
 let pendingPattern = null;
 let mouseCol = -1, mouseRow = -1;
 
+// ── Walls ──────────────────────────────────────────────
+// states: 'open' | 'wall' | 'null'
+const walls = { V: 'open', X: 'open', Y: 'open', Z: 'open' };
+const wallCycle = { open: 'wall', wall: 'null', null: 'open' };
+let labelHits = {};
+
+function applyWalls() {
+  const midCol = Math.floor(cols / 2);
+  const midRow = Math.floor(rows / 2);
+  const seg = {
+    V: (fn) => { for (let r = 0;      r < midRow; r++) fn(midCol, r); },
+    X: (fn) => { for (let r = midRow; r < rows;   r++) fn(midCol, r); },
+    Y: (fn) => { for (let c = 0;      c < midCol; c++) fn(c, midRow); },
+    Z: (fn) => { for (let c = midCol; c < cols;   c++) fn(c, midRow); },
+  };
+  for (const [name, fn] of Object.entries(seg)) {
+    if (walls[name] === 'wall') fn((c, r) => set(c, r, 1));
+    if (walls[name] === 'null') fn((c, r) => set(c, r, 0));
+  }
+}
+
 // ── Label mode ─────────────────────────────────────────
 let labelMode = 'alpha';
 
@@ -299,6 +320,7 @@ function step() {
   for (let i = 0; i < grid.length; i++)
     ages[i] = next[i] ? (grid[i] ? Math.min(ages[i] + 1, 65535) : 1) : 0;
   [grid, next] = [next, grid];
+  applyWalls();
   generation++;
   updateStats();
 }
@@ -577,24 +599,41 @@ function draw() {
   ctx.beginPath(); ctx.moveTo(0, RULER);       ctx.lineTo(canvas.width, RULER);        ctx.stroke();
   ctx.beginPath(); ctx.moveTo(0, gridBottom);  ctx.lineTo(canvas.width, gridBottom);   ctx.stroke();
 
-  // ── Center dividers ──
-  ctx.strokeStyle = '#cc2222';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(midX, gy); ctx.lineTo(midX, gridBottom); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(gx, midY); ctx.lineTo(gridRight, midY); ctx.stroke();
+  // ── Center dividers (styled per wall state) ──
+  const segStyle = { open: { color: '#cc2222', dash: [] }, wall: { color: '#ff6600', dash: [] }, null: { color: '#aaaacc', dash: [4, 3] } };
+  function drawSeg(x1, y1, x2, y2, state) {
+    const s = segStyle[state];
+    ctx.strokeStyle = s.color; ctx.lineWidth = 2;
+    ctx.setLineDash(s.dash);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  drawSeg(midX, gy,    midX, midY,       walls.V); // V: top half vertical
+  drawSeg(midX, midY,  midX, gridBottom, walls.X); // X: bottom half vertical
+  drawSeg(gx,   midY,  midX, midY,       walls.Y); // Y: left half horizontal
+  drawSeg(midX, midY,  gridRight, midY,  walls.Z); // Z: right half horizontal
 
-  // ── Divider labels ──
+  // ── Divider labels (clickable walls) ──
+  const pad = 6; const LW = 14, LH = 14;
+  labelHits = {
+    V: { x: midX + pad - LW/2,       y: gy + pad,              w: LW, h: LH },
+    X: { x: midX + pad - LW/2,       y: gridBottom - pad - LH, w: LW, h: LH },
+    Y: { x: gx + pad,                y: midY - pad - LH/2,     w: LW, h: LH },
+    Z: { x: gridRight - pad - LW,    y: midY - pad - LH/2,     w: LW, h: LH },
+  };
   ctx.font = 'bold 11px monospace';
-  ctx.fillStyle = '#cc2222';
-  const pad = 6;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  ctx.fillText('V', midX + pad, gy + pad);
-  ctx.textBaseline = 'bottom';
-  ctx.fillText('X', midX + pad, gridBottom - pad);
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('Y', gx + pad, midY - pad);
-  ctx.textAlign = 'right';
-  ctx.fillText('Z', gridRight - pad, midY - pad);
+  const wallColors = { open: null, wall: '#ff6600', null: '#333344' };
+  const textColors = { open: '#cc2222', wall: '#ffffff', null: '#aaaacc' };
+  Object.entries(labelHits).forEach(([name, box]) => {
+    const state = walls[name];
+    const bg = wallColors[state];
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(box.x, box.y, box.w, box.h); }
+    // outline for null state
+    if (state === 'null') { ctx.strokeStyle = '#aaaacc'; ctx.lineWidth = 1; ctx.strokeRect(box.x, box.y, box.w, box.h); }
+    ctx.fillStyle = textColors[state];
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(name, box.x + box.w / 2, box.y + box.h / 2);
+  });
 
   ctx.globalAlpha = 1;
   } // end layers.dividers
@@ -735,6 +774,19 @@ function updateStats() {
 // ── Mouse drawing ──────────────────────────────────────
 let painting = false;
 let paintValue = 1;
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+  for (const [name, box] of Object.entries(labelHits)) {
+    if (cx >= box.x && cx <= box.x + box.w && cy >= box.y && cy <= box.y + box.h) {
+      walls[name] = wallCycle[walls[name]];
+      applyWalls();
+      draw();
+      return;
+    }
+  }
+});
 
 canvas.addEventListener('mousedown', e => {
   if (pendingPattern) {
