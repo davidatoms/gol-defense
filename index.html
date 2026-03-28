@@ -308,6 +308,26 @@ function draw() {
   const midX = gx + Math.floor(cols / 2) * CELL;
   const midY = gy + Math.floor(rows / 2) * CELL;
 
+  // ── Full-grid line helper ──
+  function drawGridLines(seq, color) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.75;
+    seq.forEach(d => {
+      [-1, 1].forEach(dir => {
+        // vertical line at midX ± d*CELL
+        const x = midX + dir * d * CELL;
+        if (x > gx && x < gridRight) {
+          ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x, gridBottom); ctx.stroke();
+        }
+        // horizontal line at midY ± d*CELL
+        const y = midY + dir * d * CELL;
+        if (y > gy && y < gridBottom) {
+          ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gridRight, y); ctx.stroke();
+        }
+      });
+    });
+  }
+
   // ── Shared sequence marker helper ──
   function drawMarkers(seq, stroke, fill, tick = 5, labelBelow = false) {
     ctx.strokeStyle = stroke; ctx.fillStyle = fill;
@@ -554,21 +574,34 @@ function draw() {
   } // end layers.dividers
 
   // ── Layer: Primes (purple) ──
-  if (layers.primes) drawMarkers(primesSet, '#9933cc', '#bb66ff', 5);
+  if (layers.primes) {
+    drawGridLines(primesSet, 'rgba(153,51,204,0.15)');
+    drawMarkers(primesSet, '#9933cc', '#bb66ff', 5);
+  }
 
   // ── Layer: Twin Primes (yellow) ──
-  if (layers.twinPrimes) drawMarkers(twinSet, '#bbaa00', '#ffee44', 7, true);
+  if (layers.twinPrimes) {
+    drawGridLines(twinSet, 'rgba(255,238,68,0.15)');
+    drawMarkers(twinSet, '#bbaa00', '#ffee44', 7, true);
+  }
 
   // ── Layer: Fibonacci (orange) ──
-  if (layers.fibonacci) drawMarkers(fibSet, '#cc6600', '#ff9933', 6);
+  if (layers.fibonacci) {
+    drawGridLines(fibSet, 'rgba(255,153,51,0.15)');
+    drawMarkers(fibSet, '#cc6600', '#ff9933', 6);
+  }
 
   // ── Layer: Perfect Squares (cyan) ──
-  if (layers.squares) drawMarkers(sqSet, '#007799', '#33ccff', 4, true);
+  if (layers.squares) {
+    drawGridLines(sqSet, 'rgba(51,204,255,0.15)');
+    drawMarkers(sqSet, '#007799', '#33ccff', 4, true);
+  }
 
   // ── Layer: Every 10 (lime) ──
   if (layers.tens) {
     const tensSet = [];
     for (let i = 10; i <= maxDist; i += 10) tensSet.push(i);
+    drawGridLines(tensSet, 'rgba(170,255,0,0.15)');
     drawMarkers(tensSet, '#448800', '#aaff00', 8);
   }
 
