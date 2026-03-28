@@ -93,6 +93,63 @@
       flex: 1;
     }
 
+    #box-panel {
+      width: 100%;
+      background: #0e0e0e;
+      border-bottom: 1px solid #1e1e1e;
+      padding: 4px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+      min-height: 0;
+      font-size: 11px;
+      color: #555;
+    }
+
+    #box-panel:empty { display: none; }
+
+    .box-entry {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      background: #141414;
+      border: 1px solid #222;
+      border-left: 2px solid #444;
+      border-radius: 3px;
+      padding: 3px 6px;
+    }
+
+    .box-entry + .box-entry {
+      margin-left: 4px;
+      padding-left: 10px;
+      border-left: 2px solid #444;
+    }
+
+    .box-entry .box-name {
+      color: #888;
+      font-size: 10px;
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+
+    .side-btn {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: monospace;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #888;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+    }
+
+    .side-btn[data-state="wall"]  { background: #2a1500; border-color: #ff6600; color: #ff6600; }
+    .side-btn[data-state="null"]  { background: #141420; border-color: #6666aa; color: #aaaacc; }
+    .side-btn[data-state="open"]  { background: #1a0000; border-color: #cc2222; color: #cc6666; }
+
     #coords {
       position: fixed;
       bottom: 6px;
@@ -137,6 +194,9 @@
   </select>
 
   <div id="sep"></div>
+  <button id="btn-drawbox">Box</button>
+
+  <div id="sep"></div>
   <label>Labels</label>
   <select id="label-select">
     <option value="alpha">Alpha (A, B…)</option>
@@ -178,6 +238,7 @@
   </div>
 </div>
 
+<div id="box-panel"></div>
 <canvas id="canvas"></canvas>
 <div id="coords"></div>
 
@@ -204,9 +265,89 @@ let pendingPattern = null;
 let mouseCol = -1, mouseRow = -1;
 
 // ── Walls ──────────────────────────────────────────────
+// ── Draw-box tool ──────────────────────────────────────
+let drawBoxMode = false;
+let drawingBox = null;  // {c1,r1,c2,r2} in progress
+const drawnBoxes = []; // {c1,r1,c2,r2,state,label}
+let boxCounter = 0;
+const boxLabelHits = []; // parallel array of {x,y,w,h} per box, updated each draw()
+const boxSideHits = [];  // parallel array of {top,bottom,left,right} hit boxes per drawn box
+
+function boxLabel(c1, r1, c2, r2) {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const midCol = Math.floor(cols / 2), midRow = Math.floor(rows / 2);
+  const tlC = Math.min(c1, c2) - midCol;
+  const tlR = Math.min(r1, r2) - midRow;
+  let n = boxCounter, letter = '';
+  do { letter = String.fromCharCode(65 + (n % 26)) + letter; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  boxCounter++;
+  return `${mm}-${dd}_(${tlC},${tlR})_${letter}`;
+}
+
+function renderBoxPanel() {
+  const panel = document.getElementById('box-panel');
+  panel.innerHTML = '';
+  drawnBoxes.forEach((box, i) => {
+    const entry = document.createElement('div');
+    entry.className = 'box-entry';
+    // Left border gradient: top→left→bottom→right colors stacked
+    const ct = stateColor[box.sides.top];
+    const cr = stateColor[box.sides.right];
+    const cb = stateColor[box.sides.bottom];
+    const cl = stateColor[box.sides.left];
+    entry.style.borderLeftColor = 'transparent';
+    entry.style.borderLeft = 'none';
+    entry.style.backgroundImage =
+      `linear-gradient(#141414, #141414), linear-gradient(to bottom, ${ct}, ${cl}, ${cb}, ${cr})`;
+    entry.style.backgroundClip = 'padding-box, border-box';
+    entry.style.backgroundOrigin = 'padding-box, border-box';
+    entry.style.border = '2px solid transparent';
+    entry.style.borderRadius = '3px';
+
+    const name = document.createElement('span');
+    name.className = 'box-name';
+    name.textContent = box.label;
+    entry.appendChild(name);
+
+    for (const side of ['top', 'right', 'bottom', 'left']) {
+      const btn = document.createElement('button');
+      btn.className = 'side-btn';
+      btn.dataset.state = box.sides[side];
+      btn.textContent = side[0].toUpperCase() + ':' + box.sides[side];
+      btn.title = `${box.label} — ${side} side (click to cycle)`;
+      btn.addEventListener('click', () => {
+        drawnBoxes[i].sides[side] = wallCycle[drawnBoxes[i].sides[side]];
+        applyBoxes();
+        renderBoxPanel();
+        draw();
+      });
+      entry.appendChild(btn);
+    }
+
+    panel.appendChild(entry);
+  });
+}
+
+function applyBoxes() {
+  drawnBoxes.forEach(box => {
+    const c1 = Math.min(box.c1, box.c2), c2 = Math.max(box.c1, box.c2);
+    const r1 = Math.min(box.r1, box.r2), r2 = Math.max(box.r1, box.r2);
+    const sv = s => s === 'wall' ? 1 : s === 'null' ? 0 : null;
+    const top = sv(box.sides.top), bot = sv(box.sides.bottom);
+    const lft = sv(box.sides.left), rgt = sv(box.sides.right);
+    if (top !== null) for (let c = c1; c <= c2; c++) set(c, r1, top);
+    if (bot !== null) for (let c = c1; c <= c2; c++) set(c, r2, bot);
+    if (lft !== null) for (let r = r1; r <= r2; r++) set(c1, r, lft);
+    if (rgt !== null) for (let r = r1; r <= r2; r++) set(c2, r, rgt);
+  });
+}
+
 // states: 'open' | 'wall' | 'null'
 const walls = { V: 'open', X: 'open', Y: 'open', Z: 'open' };
 const wallCycle = { open: 'wall', wall: 'null', null: 'open' };
+const stateColor = { open: '#cc2222', wall: '#ff6600', null: '#6666aa' };
 let labelHits = {};
 
 function applyWalls() {
@@ -294,12 +435,14 @@ let pumpStrength = 0.3;
 function randomize() {
   for (let i = 0; i < grid.length; i++)
     if (Math.random() < pumpStrength) { grid[i] = 1; ages[i] = ages[i] || 1; }
+  applyWalls(); applyBoxes();
   updateStats(); draw();
 }
 
 function clear() {
   grid.fill(0); ages.fill(0);
   generation = 0; popHistory.length = 0;
+  applyWalls(); applyBoxes();
   updateStats(); draw();
 }
 
@@ -321,6 +464,7 @@ function step() {
     ages[i] = next[i] ? (grid[i] ? Math.min(ages[i] + 1, 65535) : 1) : 0;
   [grid, next] = [next, grid];
   applyWalls();
+  applyBoxes();
   generation++;
   updateStats();
 }
@@ -638,6 +782,85 @@ function draw() {
   ctx.globalAlpha = 1;
   } // end layers.dividers
 
+  // ── Drawn boxes ──
+  boxLabelHits.length = 0;
+  drawnBoxes.forEach((box, i) => {
+    const c1 = Math.min(box.c1, box.c2), c2 = Math.max(box.c1, box.c2);
+    const r1 = Math.min(box.r1, box.r2), r2 = Math.max(box.r1, box.r2);
+    const x = gx + c1 * CELL, y = gy + r1 * CELL;
+    const w = (c2 - c1 + 1) * CELL, h = (r2 - r1 + 1) * CELL;
+    const s = segStyle[box.state];
+
+    // Each side drawn independently
+    const sides = [
+      { name: 'top',    x1: x,   y1: y,   x2: x+w, y2: y,   state: box.sides.top    },
+      { name: 'bottom', x1: x,   y1: y+h, x2: x+w, y2: y+h, state: box.sides.bottom },
+      { name: 'left',   x1: x,   y1: y,   x2: x,   y2: y+h, state: box.sides.left   },
+      { name: 'right',  x1: x+w, y1: y,   x2: x+w, y2: y+h, state: box.sides.right  },
+    ];
+    sides.forEach(side => {
+      const ss = segStyle[side.state];
+      ctx.strokeStyle = ss.color; ctx.lineWidth = 2;
+      ctx.setLineDash(ss.dash);
+      ctx.beginPath(); ctx.moveTo(side.x1, side.y1); ctx.lineTo(side.x2, side.y2); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
+    // Label chip (top-left corner of box)
+    const LW = box.label.length * 7 + 6, LH = 14;
+    const lx = x + 3, ly = y + 3;
+    boxLabelHits[i] = { x: lx, y: ly, w: LW, h: LH };
+    // Box name label (top-left corner) — always visible
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(lx, ly, LW, LH);
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+    ctx.strokeRect(lx, ly, LW, LH);
+    ctx.fillStyle = '#ccc'; ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(box.label, lx + LW / 2, ly + LH / 2);
+
+    // Side indicator chips at midpoint of each side
+    const SW = 12, SH = 12;
+    const sideChips = [
+      { key: 'top',    cx: x + w/2, cy: y,   state: box.sides.top    },
+      { key: 'bottom', cx: x + w/2, cy: y+h, state: box.sides.bottom },
+      { key: 'left',   cx: x,       cy: y+h/2, state: box.sides.left   },
+      { key: 'right',  cx: x+w,     cy: y+h/2, state: box.sides.right  },
+    ];
+    if (!boxSideHits[i]) boxSideHits[i] = {};
+    sideChips.forEach(chip => {
+      const hx = chip.cx - SW/2, hy = chip.cy - SH/2;
+      boxSideHits[i][chip.key] = { x: hx, y: hy, w: SW, h: SH };
+      const bg2 = wallColors[chip.state];
+      ctx.fillStyle = bg2 || '#1a1a1a'; ctx.fillRect(hx, hy, SW, SH);
+      ctx.strokeStyle = segStyle[chip.state].color; ctx.lineWidth = 1;
+      ctx.strokeRect(hx, hy, SW, SH);
+    });
+  });
+
+  // ── In-progress box ──
+  if (drawingBox) {
+    const c1 = Math.min(drawingBox.c1, drawingBox.c2), c2 = Math.max(drawingBox.c1, drawingBox.c2);
+    const r1 = Math.min(drawingBox.r1, drawingBox.r2), r2 = Math.max(drawingBox.r1, drawingBox.r2);
+    const bx = gx + c1 * CELL, by = gy + r1 * CELL;
+    const bw = (c2 - c1 + 1) * CELL, bh = (r2 - r1 + 1) * CELL;
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.setLineDash([]);
+    // Preview label
+    const midCol = Math.floor(cols / 2), midRow = Math.floor(rows / 2);
+    const previewLabel = `${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}_(${c1-midCol},${r1-midRow})`;
+    const LW = previewLabel.length * 7 + 6, LH = 14;
+    ctx.fillStyle = 'rgba(40,40,40,0.85)';
+    ctx.fillRect(bx + 3, by + 3, LW, LH);
+    ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1;
+    ctx.strokeRect(bx + 3, by + 3, LW, LH);
+    ctx.fillStyle = '#ddd'; ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(previewLabel, bx + 3 + LW / 2, by + 3 + LH / 2);
+  }
+
   // ── Layer: Primes (purple) ──
   if (layers.primes) {
     drawGridLines(primesSet, 'rgba(153,51,204,0.15)');
@@ -776,8 +999,11 @@ let painting = false;
 let paintValue = 1;
 
 canvas.addEventListener('click', e => {
+  if (drawBoxMode) return;
   const rect = canvas.getBoundingClientRect();
   const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+
+  // Check V/X/Y/Z label hits
   for (const [name, box] of Object.entries(labelHits)) {
     if (cx >= box.x && cx <= box.x + box.w && cy >= box.y && cy <= box.y + box.h) {
       walls[name] = wallCycle[walls[name]];
@@ -786,9 +1012,47 @@ canvas.addEventListener('click', e => {
       return;
     }
   }
+
+  // Check drawn box side chip hits — cycle individual side state
+  for (let i = 0; i < drawnBoxes.length; i++) {
+    const sideHits = boxSideHits[i];
+    if (sideHits) {
+      for (const side of ['top', 'bottom', 'left', 'right']) {
+        const hit = sideHits[side];
+        if (hit && cx >= hit.x && cx <= hit.x + hit.w && cy >= hit.y && cy <= hit.y + hit.h) {
+          drawnBoxes[i].sides[side] = wallCycle[drawnBoxes[i].sides[side]];
+          applyBoxes();
+          renderBoxPanel();
+          draw();
+          return;
+        }
+      }
+    }
+  }
+
+  // Check drawn box label hits — cycle all sides at once
+  for (let i = 0; i < drawnBoxes.length; i++) {
+    const hit = boxLabelHits[i];
+    if (hit && cx >= hit.x && cx <= hit.x + hit.w && cy >= hit.y && cy <= hit.y + hit.h) {
+      const next = wallCycle[drawnBoxes[i].sides.top];
+      drawnBoxes[i].sides.top = next;
+      drawnBoxes[i].sides.bottom = next;
+      drawnBoxes[i].sides.left = next;
+      drawnBoxes[i].sides.right = next;
+      applyBoxes();
+      renderBoxPanel();
+      draw();
+      return;
+    }
+  }
 });
 
 canvas.addEventListener('mousedown', e => {
+  if (drawBoxMode) {
+    const [c, r] = mouseCell(e);
+    drawingBox = { c1: c, r1: r, c2: c, r2: r };
+    return;
+  }
   if (pendingPattern) {
     insertPattern(pendingPattern, ...mouseCell(e));
     pendingPattern = null;
@@ -809,11 +1073,26 @@ canvas.addEventListener('mousemove', e => {
   mouseCol = c; mouseRow = r;
   document.getElementById('coords').textContent =
     (c >= 0 && r >= 0 && c < cols && r < rows) ? `${colLabel(c)}${r + 1}` : '';
-  if (painting) { set(c, r, paintValue); updateStats(); }
+  if (drawingBox) { drawingBox.c2 = c; drawingBox.r2 = r; }
+  else if (painting) { set(c, r, paintValue); updateStats(); }
   draw();
 });
 
-canvas.addEventListener('mouseup', () => painting = false);
+canvas.addEventListener('mouseup', e => {
+  if (drawingBox) {
+    const [c, r] = mouseCell(e);
+    drawingBox.c2 = c; drawingBox.r2 = r;
+    if (drawingBox.c1 !== drawingBox.c2 || drawingBox.r1 !== drawingBox.r2) {
+      drawnBoxes.push({ ...drawingBox, sides: { top: 'wall', bottom: 'wall', left: 'wall', right: 'wall' }, label: boxLabel(drawingBox.c1, drawingBox.r1, drawingBox.c2, drawingBox.r2) });
+      applyBoxes();
+      renderBoxPanel();
+    }
+    drawingBox = null;
+    draw();
+    return;
+  }
+  painting = false;
+});
 canvas.addEventListener('mouseleave', () => {
   painting = false;
   mouseCol = -1; mouseRow = -1;
@@ -903,6 +1182,13 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' || e.key === '.') { pause(); step(); draw(); }
   if (e.key === 'c') { pause(); clear(); }
   if (e.key === 'r') { pause(); randomize(); }
+});
+
+// ── Draw-box button ────────────────────────────────────
+document.getElementById('btn-drawbox').addEventListener('click', () => {
+  drawBoxMode = !drawBoxMode;
+  document.getElementById('btn-drawbox').classList.toggle('active', drawBoxMode);
+  canvas.style.cursor = drawBoxMode ? 'crosshair' : 'crosshair';
 });
 
 // ── Label mode toggle ──────────────────────────────────
