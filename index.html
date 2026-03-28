@@ -160,9 +160,11 @@
     <option value="twinPrimes">  Twin Primes</option>
     <option value="fibonacci">  Fibonacci</option>
     <option value="squares">  Squares</option>
-    <option value="tens">  Every 10</option>
+    <option value="tensHorizontal">  Tens Horizontal</option>
+    <option value="tensVertical">  Tens Vertical</option>
     <option value="coords">  Coords</option>
-    <option value="twinLines">  Twin Lines</option>
+    <option value="twinHorizontal">  Twin Horizontal</option>
+    <option value="twinVertical">  Twin Vertical</option>
   </select>
 
   <div id="stats">
@@ -226,7 +228,7 @@ function yLabel(r) {
 }
 
 // ── Layers ─────────────────────────────────────────────
-const layers = { dividers: true, age: false, neighbors: false, heatmap: false, population: false, primes: true, twinPrimes: false, fibonacci: false, squares: false, tens: false, coords: false, twinLines: false };
+const layers = { dividers: true, age: false, neighbors: false, heatmap: false, population: false, primes: true, twinPrimes: false, fibonacci: false, squares: false, tensHorizontal: false, tensVertical: false, coords: false, twinHorizontal: false, twinVertical: false };
 let ages; // Uint16Array — generations each cell has been alive
 const popHistory = []; // population over time
 const POP_HISTORY_LEN = 200;
@@ -597,11 +599,31 @@ function draw() {
     drawMarkers(sqSet, '#007799', '#33ccff', 4, true);
   }
 
-  // ── Layer: Every 10 (lime) ──
-  if (layers.tens) {
-    const tensSet = [];
-    for (let i = 10; i <= maxDist; i += 10) tensSet.push(i);
-    drawGridLines(tensSet, 'rgba(170,255,0,0.15)');
+  // ── Layer: Tens Horizontal / Vertical ──
+  const tensSet = [];
+  for (let i = 10; i <= maxDist; i += 10) tensSet.push(i);
+
+  if (layers.tensHorizontal) {
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(170,255,0,0.55)';
+    tensSet.forEach(d => {
+      [-1, 1].forEach(dir => {
+        const x = midX + dir * d * CELL;
+        if (x <= gx || x >= gridRight) return;
+        ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x, gridBottom); ctx.stroke();
+      });
+    });
+    drawMarkers(tensSet, '#448800', '#aaff00', 8);
+  }
+
+  if (layers.tensVertical) {
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(170,255,0,0.55)';
+    tensSet.forEach(d => {
+      [-1, 1].forEach(dir => {
+        const y = midY + dir * d * CELL;
+        if (y <= gy || y >= gridBottom) return;
+        ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gridRight, y); ctx.stroke();
+      });
+    });
     drawMarkers(tensSet, '#448800', '#aaff00', 8);
   }
 
@@ -617,56 +639,30 @@ function draw() {
     }
   }
 
-  // ── Layer: Twin Lines ──
-  if (layers.twinLines && twinSet.length > 1) {
-    ctx.lineWidth = 1;
-    // For each twin prime d, connect its horizontal mark to its vertical mark
-    // in all four quadrant directions — creates X-shaped diagonals per twin prime
+  // ── Layer: Twin Horizontal ──
+  // Vertical lines (up/down) at each twin prime distance along the horizontal axis
+  if (layers.twinHorizontal && twinSet.length) {
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,220,40,0.55)';
     twinSet.forEach(d => {
-      const hx = midX + d * CELL, hn = midX - d * CELL;
-      const vy = midY + d * CELL, vn = midY - d * CELL;
-      ctx.strokeStyle = 'rgba(255,220,40,0.25)';
-      // All four quadrant diagonals from axis to axis
-      [[hx, midY, midX, vn], [hx, midY, midX, vy],
-       [hn, midY, midX, vn], [hn, midY, midX, vy]].forEach(([x1,y1,x2,y2]) => {
-        if (x1 < gx || x1 > gridRight || x2 < gx || x2 > gridRight) return;
-        if (y1 < gy || y1 > gridBottom || y2 < gy || y2 > gridBottom) return;
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      [-1, 1].forEach(dir => {
+        const x = midX + dir * d * CELL;
+        if (x <= gx || x >= gridRight) return;
+        ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x, gridBottom); ctx.stroke();
       });
     });
+  }
 
-    // Connect consecutive twin primes on the horizontal axis with lines
-    // that dive into the grid — alternating above/below midY
-    ctx.strokeStyle = 'rgba(255,220,40,0.5)';
-    for (let i = 0; i < twinSet.length - 1; i++) {
-      const d1 = twinSet[i], d2 = twinSet[i + 1];
-      // positive side
-      const x1 = midX + d1 * CELL, x2 = midX + d2 * CELL;
-      const y1 = midY, y2 = midY - (d2 - d1) * CELL;
-      if (x1 <= gridRight && x2 <= gridRight && y2 >= gy) {
-        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      }
-      // negative side
-      const nx1 = midX - d1 * CELL, nx2 = midX - d2 * CELL;
-      const ny2 = midY + (d2 - d1) * CELL;
-      if (nx1 >= gx && nx2 >= gx && ny2 <= gridBottom) {
-        ctx.beginPath(); ctx.moveTo(nx1, y1); ctx.lineTo(nx2, ny2); ctx.stroke();
-      }
-    }
-    // Same for vertical axis
-    for (let i = 0; i < twinSet.length - 1; i++) {
-      const d1 = twinSet[i], d2 = twinSet[i + 1];
-      const y1p = midY + d1 * CELL, y2p = midY + d2 * CELL;
-      const x2p = midX + (d2 - d1) * CELL;
-      if (y1p <= gridBottom && y2p <= gridBottom && x2p <= gridRight) {
-        ctx.beginPath(); ctx.moveTo(midX, y1p); ctx.lineTo(x2p, y2p); ctx.stroke();
-      }
-      const y1n = midY - d1 * CELL, y2n = midY - d2 * CELL;
-      const x2n = midX - (d2 - d1) * CELL;
-      if (y1n >= gy && y2n >= gy && x2n >= gx) {
-        ctx.beginPath(); ctx.moveTo(midX, y1n); ctx.lineTo(x2n, y2n); ctx.stroke();
-      }
-    }
+  // ── Layer: Twin Vertical ──
+  // Horizontal lines (left/right) at each twin prime distance along the vertical axis
+  if (layers.twinVertical && twinSet.length) {
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,220,40,0.55)';
+    twinSet.forEach(d => {
+      [-1, 1].forEach(dir => {
+        const y = midY + dir * d * CELL;
+        if (y <= gy || y >= gridBottom) return;
+        ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gridRight, y); ctx.stroke();
+      });
+    });
   }
 
 }
@@ -836,7 +832,7 @@ document.getElementById('label-select').addEventListener('change', e => {
 });
 
 // ── Layer toggles ──────────────────────────────────────
-const layerNames = { dividers: 'Dividers', age: 'Age', neighbors: 'Neighbors', heatmap: 'Heatmap', population: 'Population', primes: 'Primes', twinPrimes: 'Twin Primes', fibonacci: 'Fibonacci', squares: 'Squares', tens: 'Every 10', coords: 'Coords', twinLines: 'Twin Lines' };
+const layerNames = { dividers: 'Dividers', age: 'Age', neighbors: 'Neighbors', heatmap: 'Heatmap', population: 'Population', primes: 'Primes', twinPrimes: 'Twin Primes', fibonacci: 'Fibonacci', squares: 'Squares', tensHorizontal: 'Tens Horizontal', tensVertical: 'Tens Vertical', coords: 'Coords', twinHorizontal: 'Twin Horizontal', twinVertical: 'Twin Vertical' };
 
 function refreshLayerSelect() {
   const sel = document.getElementById('layer-select');
