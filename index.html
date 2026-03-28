@@ -93,6 +93,36 @@
       flex: 1;
     }
 
+    #seq-panel {
+      width: 100%;
+      background: #0c0c0c;
+      border-bottom: 1px solid #1a1a1a;
+      padding: 4px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      flex-shrink: 0;
+      font-size: 11px;
+      color: #555;
+    }
+
+    .seq-btn {
+      font-size: 10px;
+      padding: 2px 10px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-family: monospace;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #666;
+      transition: background 0.1s, border-color 0.1s, color 0.1s;
+      letter-spacing: 0.05em;
+    }
+
+    .seq-btn[data-state="wall"] { background: #2a1500; border-color: #ff6600; color: #ff6600; }
+    .seq-btn[data-state="null"] { background: #141420; border-color: #6666aa; color: #aaaacc; }
+
     #box-panel {
       width: 100%;
       background: #0e0e0e;
@@ -238,6 +268,7 @@
   </div>
 </div>
 
+<div id="seq-panel"></div>
 <div id="box-panel"></div>
 <canvas id="canvas"></canvas>
 <div id="coords"></div>
@@ -284,6 +315,28 @@ function boxLabel(c1, r1, c2, r2) {
   do { letter = String.fromCharCode(65 + (n % 26)) + letter; n = Math.floor(n / 26) - 1; } while (n >= 0);
   boxCounter++;
   return `${mm}-${dd}_(${tlC},${tlR})_${letter}`;
+}
+
+function renderSeqPanel() {
+  const panel = document.getElementById('seq-panel');
+  panel.innerHTML = '';
+  for (const [name, meta] of Object.entries(seqMeta)) {
+    const btn = document.createElement('button');
+    btn.className = 'seq-btn';
+    btn.dataset.state = seqHardness[name];
+    btn.textContent = meta.label + ' — ' + seqHardness[name];
+    btn.style.borderColor = seqHardness[name] === 'open' ? meta.color : '';
+    btn.style.color       = seqHardness[name] === 'open' ? meta.color : '';
+    if (seqHardness[name] === 'open') btn.style.background = '#111';
+    btn.title = `${meta.label} hardness (click to cycle)`;
+    btn.addEventListener('click', () => {
+      seqHardness[name] = wallCycle[seqHardness[name]];
+      applySeqHardness();
+      renderSeqPanel();
+      draw();
+    });
+    panel.appendChild(btn);
+  }
 }
 
 function renderBoxPanel() {
@@ -344,11 +397,57 @@ function applyBoxes() {
   });
 }
 
+function applySeqHardness() {
+  const midCol = Math.floor(cols / 2);
+  const midRow = Math.floor(rows / 2);
+  const maxDist = Math.max(cols, rows);
+
+  // Recompute sequences
+  const sieve = new Uint8Array(maxDist + 1).fill(1);
+  sieve[0] = sieve[1] = 0;
+  for (let i = 2; i * i <= maxDist; i++) if (sieve[i]) for (let j = i*i; j <= maxDist; j += i) sieve[j] = 0;
+  const primesArr = [];
+  for (let i = 2; i <= maxDist; i++) if (sieve[i]) primesArr.push(i);
+  const twinArr = primesArr.filter(p => (p+2 <= maxDist && sieve[p+2]) || (p-2 >= 2 && sieve[p-2]));
+  const fibArr = []; let a = 1, b = 1;
+  while (a <= maxDist) { if (a >= 2) fibArr.push(a); [a, b] = [b, a + b]; }
+  const sqArr = [];
+  for (let i = 1; i*i <= maxDist; i++) if (i*i >= 2) sqArr.push(i*i);
+  const tensArr = [];
+  for (let i = 10; i <= maxDist; i += 10) tensArr.push(i);
+
+  const seqs = { primes: primesArr, twinPrimes: twinArr, fibonacci: fibArr, squares: sqArr, tens: tensArr };
+
+  for (const [name, seq] of Object.entries(seqs)) {
+    const state = seqHardness[name];
+    if (state === 'open') continue;
+    const val = state === 'wall' ? 1 : 0;
+    seq.forEach(d => {
+      [-1, 1].forEach(dir => {
+        const c = midCol + dir * d;
+        const r = midRow + dir * d;
+        if (c >= 0 && c < cols) for (let row = 0; row < rows; row++) set(c, row, val);
+        if (r >= 0 && r < rows) for (let col = 0; col < cols; col++) set(col, r, val);
+      });
+    });
+  }
+}
+
 // states: 'open' | 'wall' | 'null'
 const walls = { V: 'open', X: 'open', Y: 'open', Z: 'open' };
 const wallCycle = { open: 'wall', wall: 'null', null: 'open' };
 const stateColor = { open: '#cc2222', wall: '#ff6600', null: '#6666aa' };
 let labelHits = {};
+
+// ── Sequence hardness ───────────────────────────────────
+const seqHardness = { primes: 'open', twinPrimes: 'open', fibonacci: 'open', squares: 'open', tens: 'open' };
+const seqMeta = {
+  primes:     { label: 'Primes',      color: '#9933cc' },
+  twinPrimes: { label: 'Twin Primes', color: '#ccbb00' },
+  fibonacci:  { label: 'Fibonacci',   color: '#ff9933' },
+  squares:    { label: 'Squares',     color: '#33cccc' },
+  tens:       { label: 'Tens',        color: '#88cc00' },
+};
 
 function applyWalls() {
   const midCol = Math.floor(cols / 2);
@@ -435,14 +534,14 @@ let pumpStrength = 0.3;
 function randomize() {
   for (let i = 0; i < grid.length; i++)
     if (Math.random() < pumpStrength) { grid[i] = 1; ages[i] = ages[i] || 1; }
-  applyWalls(); applyBoxes();
+  applyWalls(); applyBoxes(); applySeqHardness();
   updateStats(); draw();
 }
 
 function clear() {
   grid.fill(0); ages.fill(0);
   generation = 0; popHistory.length = 0;
-  applyWalls(); applyBoxes();
+  applyWalls(); applyBoxes(); applySeqHardness();
   updateStats(); draw();
 }
 
@@ -465,6 +564,7 @@ function step() {
   [grid, next] = [next, grid];
   applyWalls();
   applyBoxes();
+  applySeqHardness();
   generation++;
   updateStats();
 }
@@ -1222,6 +1322,7 @@ document.getElementById('layer-select').addEventListener('change', e => {
 // ── Init ───────────────────────────────────────────────
 resize();
 randomize();
+renderSeqPanel();
 </script>
 </body>
 </html>
