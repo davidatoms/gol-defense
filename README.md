@@ -18,7 +18,7 @@ This project is an attempt to sit at that intersection.
 
 ## What This Is
 
-A Conway's Game of Life simulation built as a spatial reasoning and diagramming tool. The grid is not just a toy — it is a substrate for exploring how mathematical structure, boundary conditions, and emergent computation interact.
+A Conway's Game of Life simulation built as a spatial reasoning and diagramming tool. This is an early and honest attempt at something — and we are genuinely curious what others see in it. If you work in computer vision, cellular automata, neuroevolution, FPGA design, or defense systems, we would love to hear how you would use this, what you would change, and what directions you think it points toward. The grid is not just a toy — it is a substrate for exploring how mathematical structure, boundary conditions, and emergent computation interact, and we suspect others will find uses for it that we haven't thought of yet.
 
 Every layer added to this project corresponds to a real mathematical or physical idea:
 
